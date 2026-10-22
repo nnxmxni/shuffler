@@ -10,6 +10,11 @@ const mk = async label => {
   const page = await ctx.newPage()
   page.on('console', m => { if (m.type() !== 'log') console.log(`[${label}:${m.type()}]`, m.text().slice(0, 140)) })
   await page.goto(label === 'B' ? url.split('#')[0] : url)
+  // lobby: a name is required; A gets the room from the link, B types the code
+  await page.type('#lobbyName', label === 'A' ? 'Ada' : 'Ben')
+  if (label === 'B') await page.type('#lobbyCode', room.toLowerCase())
+  await page.click('#enter')
+  await page.waitForSelector('#main:not([hidden])')
   return page
 }
 const listText = p => p.$$eval('#list li span:first-child', els => els.map(e => e.textContent))
@@ -24,14 +29,15 @@ const A = await mk('A')
 await add(A, 'Pizza'); await add(A, 'Sushi')
 console.log('A slips', await listText(A))
 
+const lobbyBlocked = await (async () => { const ctx = await browser.createBrowserContext(); const p = await ctx.newPage(); await p.goto(url); await p.click('#enter'); const r = await p.$eval('#main', e => e.hidden); await ctx.close(); return r })()
+console.log('Entering without a name is blocked:', lobbyBlocked)
 const B = await mk('B')
-console.log('B started in its own room:', await B.$eval('#code', e => e.textContent) !== room)
-await B.type('#joinCode', room.toLowerCase()); await B.keyboard.press('Enter')
-console.log('B joined by typing the code:', await B.$eval('#code', e => e.textContent) === room)
+console.log('B entered A\'s room via the lobby:', await B.$eval('#code', e => e.textContent) === room)
 const t0 = Date.now()
 const synced = await until(B, async () => (await listText(B)).length === 2)
 console.log('B sees A slips folded, not the text:', synced && JSON.stringify(await listText(B)) === '["folded slip","folded slip"]', `(${((Date.now() - t0) / 1000).toFixed(1)}s)`, await listText(B))
 console.log('A header:', await A.$eval('#peers', e => e.textContent), '| B header:', await B.$eval('#peers', e => e.textContent))
+console.log('A sees Ben in the room:', await until(A, async () => /Ben/.test(await A.$eval('#people', e => e.textContent)), 5000), '|', await A.$eval('#people', e => e.textContent))
 
 await add(B, 'Tacos')
 console.log('A got a folded slip from B:', await until(A, async () => (await listText(A)).length === 3, 10000), await listText(A))

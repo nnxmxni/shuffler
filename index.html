@@ -50,6 +50,21 @@
     min-height: 100dvh;
   }
   main { max-width: 760px; margin: 0 auto; padding: 20px 16px 48px; }
+  main[hidden], .lobby[hidden] { display: none; }
+
+  .lobby { max-width: 420px; margin: 0 auto; padding: 48px 16px; }
+  .lobby h1 { font-size: 40px; margin-bottom: 6px; }
+  .lobby .lead { color: var(--muted); margin: 0 0 22px; }
+  .lobby form { display: grid; gap: 14px; padding: 20px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; }
+  .lobby label { display: grid; gap: 6px; font-size: 14px; color: var(--muted); }
+  .lobby label .opt { font-weight: normal; }
+  .lobby input { font: 500 18px/1.2 system-ui, sans-serif; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+  #lobbyCode { font: 600 18px/1.2 ui-monospace, Menlo, monospace; letter-spacing: 3px; text-transform: uppercase; }
+  .lobby .invite { margin: -4px 0 0; font-size: 14px; color: var(--muted); }
+  .lobby .invite code { font: 600 14px/1 ui-monospace, Menlo, monospace; letter-spacing: 2px; color: var(--ink); }
+  .lobby button.primary { padding: 12px; font-size: 16px; }
+  .people { margin: 14px 0 0; font-size: 14px; color: var(--muted); }
+  .people b { color: var(--ink); font-weight: 600; }
 
   header { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between; margin-bottom: 16px; }
   h1 { font: 700 26px/1.1 Caveat, cursive; margin: 0; letter-spacing: .5px; }
@@ -138,7 +153,6 @@
   .list li button { padding: 2px 8px; border-radius: 999px; font-size: 13px; line-height: 1.2; }
 
   footer { margin-top: 28px; display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; color: var(--muted); font-size: 13px; }
-  footer input { font: inherit; padding: 5px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--ink); width: 140px; }
   .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--ink); color: var(--bg);
     padding: 8px 14px; border-radius: 999px; font-size: 14px; opacity: 0; transition: opacity .25s; pointer-events: none; }
   .toast.show { opacity: 1; }
@@ -150,7 +164,21 @@
 </style>
 </head>
 <body>
-<main>
+<section class="lobby" id="lobby">
+  <h1>Paper Shuffler</h1>
+  <p class="lead">Write options on slips, shuffle them together, draw one. Everyone joins browser to browser.</p>
+  <form id="lobbyForm" autocomplete="off">
+    <label>Your name
+      <input id="lobbyName" maxlength="20" placeholder="How others will see you" required autofocus>
+    </label>
+    <label>Room code <span class="opt">(leave empty to open a new bowl)</span>
+      <input id="lobbyCode" maxlength="12" placeholder="e.g. K7PX2Q" spellcheck="false">
+    </label>
+    <p class="invite" id="invite" hidden>You've been invited to room <code id="inviteCode"></code>.</p>
+    <button class="primary" type="submit" id="enter">Enter the room</button>
+  </form>
+</section>
+<main id="main" hidden>
   <header>
     <h1>Paper Shuffler <small id="peers"></small></h1>
     <div class="room">
@@ -191,8 +219,11 @@
 
   <ul class="list" id="list"></ul>
 
+  <p class="people" id="people"></p>
+
   <footer>
-    <label>Your name <input id="name" maxlength="20" placeholder="anonymous"></label>
+    <span>You're in as <b id="me"></b></span>
+    <button class="small" id="leave">Leave the bowl</button>
     <span id="hint">Tell others the room code, or send the invite link. Everyone joins this bowl directly, browser to browser, and other people's slips stay folded until one is drawn.</span>
   </footer>
 </main>
@@ -213,9 +244,8 @@
   }
 
   // ---------- local identity ----------
-  const nameInput = $('name')
-  nameInput.value = store.get('shuffler:name') || ''
-  const myName = () => nameInput.value.trim() || 'anonymous'
+  let name = (store.get('shuffler:name') || '').trim()
+  const myName = () => name || 'anonymous'
   const myId = store.get('shuffler:uid') || (() => {
     const id = Array.from(crypto.getRandomValues(new Uint8Array(8)), b => b.toString(16).padStart(2, '0')).join('')
     store.set('shuffler:uid', id); return id
@@ -224,7 +254,7 @@
   // ---------- shared state ----------
   // slips: id -> {id, text, by, owner, t}; removed: tombstones; draw: last draw; names: peerId -> name
   const state = { slips: new Map(), removed: new Set(), draw: null }
-  const names = { [selfId]: myName() }
+  const names = {}
   let roomCode = '', room = null, storeKey = ''
   let animated = null, revealed = null
   let acts = null
@@ -269,7 +299,7 @@
     for (const n of ['state', 'add', 'remove', 'draw', 'name']) acts[n] = room.makeAction(n)
     room.onPeerJoin = id => { send('name', myName(), id); send('state', snapshot(), id); updatePeers(); toast('Someone joined the bowl') }
     room.onPeerLeave = id => { delete names[id]; updatePeers() }
-    acts.name.onMessage = (n, { peerId }) => { names[peerId] = String(n).slice(0, 20); render() }
+    acts.name.onMessage = (n, { peerId }) => { names[peerId] = String(n).slice(0, 20); renderPeople() }
     acts.state.onMessage = remote => { merge(remote); save(); render(); maybeAnimate() }
     acts.add.onMessage = s => { if (!state.removed.has(s.id)) state.slips.set(s.id, s); save(); render() }
     acts.remove.onMessage = ids => { for (const id of ids) { state.removed.add(id); state.slips.delete(id) } save(); render() }
@@ -288,9 +318,15 @@
   }
 
   const peerCount = () => { const p = room ? room.getPeers() : {}; return p instanceof Map ? p.size : Object.keys(p).length }
+  function renderPeople() {
+    const others = room ? Object.keys(room.getPeers() instanceof Map ? Object.fromEntries(room.getPeers()) : room.getPeers()) : []
+    const list = others.map(id => esc(names[id] || 'someone')).join(', ')
+    $('people').innerHTML = others.length ? `In the bowl: <b>you</b>, ${list}` : 'Nobody else is here yet. Share the room code.'
+  }
   function updatePeers() {
     const n = peerCount()
     $('peers').textContent = n ? `${n + 1} here` : 'just you so far'
+    renderPeople()
     let open = 0, total = 0
     try { for (const ws of Object.values(getRelaySockets())) { total++; if (ws.readyState === 1) open++ } } catch {}
     $('dot').classList.toggle('on', open > 0)
@@ -309,7 +345,12 @@
     toast('Joined room ' + code)
   })
   $('newRoom').addEventListener('click', () => connect(randomCode()))
-  window.addEventListener('hashchange', () => { const c = cleanCode(location.hash.slice(1)); if (c && c !== roomCode) connect(c) })
+  window.addEventListener('hashchange', () => {
+    const c = cleanCode(location.hash.slice(1))
+    if (!c) return
+    if (!lobby.hidden) { $('lobbyCode').value = c; $('invite').hidden = false; $('inviteCode').textContent = c }
+    else if (c !== roomCode) connect(c)
+  })
   $('copy').addEventListener('click', async () => {
     const link = location.href
     try { await navigator.clipboard.writeText(link); toast('Invite link copied. The room code is ' + roomCode) }
@@ -371,11 +412,6 @@
   })
   $('putBack').addEventListener('click', () => setDraw({ id: uid(), cleared: true, t: Date.now() }))
 
-  nameInput.addEventListener('change', () => {
-    store.set('shuffler:name', nameInput.value.trim())
-    names[selfId] = myName()
-    send('name', myName())
-  })
 
   // ---------- rendering ----------
   const bowl = $('bowl')
@@ -458,8 +494,36 @@
     toastTimer = setTimeout(() => $('toast').classList.remove('show'), 2600)
   }
 
-  // ---------- go ----------
-  connect(cleanCode(location.hash.slice(1)) || cleanCode(store.get('shuffler:lastRoom')) || randomCode())
+  // ---------- lobby ----------
+  const lobby = $('lobby'), main = $('main')
+  function showLobby() {
+    const invited = cleanCode(location.hash.slice(1))
+    $('lobbyName').value = name
+    $('lobbyCode').value = invited || cleanCode(store.get('shuffler:lastRoom'))
+    $('invite').hidden = !invited
+    $('inviteCode').textContent = invited
+    main.hidden = true
+    lobby.hidden = false
+    ;(name ? $('lobbyCode') : $('lobbyName')).focus()
+  }
+  $('lobbyForm').addEventListener('submit', e => {
+    e.preventDefault()
+    const n = $('lobbyName').value.trim()
+    if (!n) { $('lobbyName').focus(); return }
+    name = n
+    store.set('shuffler:name', name)
+    names[selfId] = name
+    $('me').textContent = name
+    lobby.hidden = true
+    main.hidden = false
+    connect(cleanCode($('lobbyCode').value) || randomCode())
+  })
+  $('leave').addEventListener('click', () => {
+    if (room) { try { room.leave() } catch {} }
+    room = null; acts = null
+    showLobby()
+  })
+  showLobby()
 </script>
 </body>
 </html>
