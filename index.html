@@ -125,25 +125,22 @@
     transition: transform .5s cubic-bezier(.2,.8,.3,1.2), opacity .4s, left .5s, top .5s, max-width .5s;
     cursor: default; user-select: none;
   }
-  .slip.dropping { animation: drop .75s cubic-bezier(.35,1.35,.55,1) both; }
+  .slip.dropping { animation: drop 1s both; z-index: 3; }
   @keyframes drop {
-    0%   { transform: translateY(-340px) rotate(calc(var(--r) - 70deg)) scale(1.15); opacity: 0; }
-    30%  { opacity: 1; }
+    0%   { transform: translateY(var(--fall, -400px)) rotate(calc(var(--r) - 50deg)) scale(1.12); opacity: 0; animation-timing-function: cubic-bezier(.5, 0, .9, .6); }
+    8%   { opacity: 1; animation-timing-function: cubic-bezier(.5, 0, .9, .6); }
+    68%  { transform: translateY(0) rotate(calc(var(--r) + 8deg)) scale(.96); animation-timing-function: ease-out; }
+    82%  { transform: translateY(-9px) rotate(calc(var(--r) - 3deg)) scale(1); animation-timing-function: ease-in; }
     100% { transform: translateY(0) rotate(var(--r)) scale(1); opacity: 1; }
   }
   .slip.dropping.folded { animation-name: dropFolded; }
   @keyframes dropFolded {
-    0%   { transform: translateY(-340px) rotate(calc(var(--r) + 50deg)); opacity: 0; }
-    30%  { opacity: 1; }
+    0%   { transform: translateY(var(--fall, -400px)) rotate(calc(var(--r) + 40deg)); opacity: 0; animation-timing-function: cubic-bezier(.5, 0, .9, .6); }
+    8%   { opacity: 1; animation-timing-function: cubic-bezier(.5, 0, .9, .6); }
+    68%  { transform: translateY(0) rotate(calc(var(--r) - 6deg)); animation-timing-function: ease-out; }
+    82%  { transform: translateY(-7px) rotate(calc(var(--r) + 2deg)); animation-timing-function: ease-in; }
     100% { transform: translateY(0) rotate(var(--r)); opacity: 1; }
   }
-  .slip.folded {
-    font: 500 12px/1.2 system-ui, sans-serif; color: #8a8174; letter-spacing: .3px; padding: 10px 14px 12px; min-width: 64px; text-align: center;
-    background: linear-gradient(180deg, #f7f2e4 0 48%, #e9e2d2 48% 52%, #fffdf5 52%);
-    clip-path: polygon(0 6%, 6% 0, 94% 0, 100% 6%, 100% 94%, 94% 100%, 6% 100%, 0 94%);
-  }
-  .list li.folded span:first-child { font-style: italic; color: var(--muted); }
-  .list li.folded { padding-right: 12px; }
   .bowl.shuffling .slip { animation: jumble .35s ease-in-out infinite alternate; animation-delay: var(--d); }
   @keyframes jumble {
     0%   { transform: translate(-18px, -10px) rotate(calc(var(--r) - 30deg)); }
@@ -490,8 +487,8 @@
         el.className = 'slip'
         el.dataset.id = s.id
         const h = hash(s.id)
-        el.style.setProperty('--r', (((h >> 16) % 30) - 15) + 'deg')
-        el.style.setProperty('--d', -((h >> 20) % 350) + 'ms')
+        el.style.setProperty('--r', (((h >>> 16) % 30) - 15) + 'deg')
+        el.style.setProperty('--d', -((h >>> 20) % 350) + 'ms')
         if (bowlReady) {
           el.classList.add('dropping')
           el.addEventListener('animationend', () => el.classList.remove('dropping'), { once: true })
@@ -553,16 +550,17 @@
       if (!el) return
       if (bowl.classList.contains('revealed') && d && d.winner === s.id) { el.style.left = '50%'; el.style.top = '50%'; return }
       const slot = i % slots, cycle = Math.floor(i / slots)
-      const row = rowSpec(Math.floor(slot / cols)), col = slot % cols
+      const row = rowSpec(rows - 1 - Math.floor(slot / cols)), col = slot % cols
       const h = hash(s.id)
       const cellW = (row.x1 - row.x0) * W / cols
       const slipW = Math.min(cellW - 10, 180)
       el.style.setProperty('--w', slipW + 'px')
-      const jx = ((h >> 4) % 11 - 5), jy = ((h >> 10) % 15 - 7)
+      const jx = ((h >>> 4) % 11 - 5), jy = ((h >>> 10) % 15 - 7)
       const left = row.x0 * W + col * cellW + (cellW - Math.min(slipW, el.offsetWidth || slipW)) / 2 + jx + cycle * 24
       const top = row.y * H - (el.offsetHeight || 36) / 2 + jy + cycle * 18
       el.style.left = Math.round(left) + 'px'
       el.style.top = Math.round(top) + 'px'
+      if (el.classList.contains('dropping')) el.style.setProperty('--fall', -(Math.round(top) + 90) + 'px')
     })
   }
   let resizeTimer
