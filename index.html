@@ -118,13 +118,36 @@
   }
   .slip {
     position: absolute; left: 0; top: 0; max-width: var(--w, 180px);
-    padding: 8px 14px; background: var(--paper); color: var(--paper-ink);
-    font: 700 19px/1.15 Caveat, cursive; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    transform: rotate(var(--r)); box-shadow: 1px 2px 5px var(--paper-shadow);
-    clip-path: polygon(0 3%, 4% 0, 97% 2%, 100% 8%, 99% 95%, 95% 100%, 3% 98%, 0 90%);
-    transition: transform .5s cubic-bezier(.2,.8,.3,1.2), opacity .4s, left .5s, top .5s, max-width .5s;
+    padding: 7px 14px 17px; color: var(--paper-ink);
+    /* the half folded underneath: a touch darker, it shows below the flap */
+    background: linear-gradient(180deg, #e2dac6, #cfc5ad);
+    font: 700 19px/1.15 Caveat, cursive; white-space: nowrap;
+    transform: rotate(var(--r)); box-shadow: 0 3px 6px var(--paper-shadow), 0 1px 1px rgba(0,0,0,.12);
+    border-radius: 2px;
+    clip-path: polygon(0 2%, 3% 0, 97% 1%, 100% 6%, 99% 96%, 96% 100%, 3% 99%, 0 92%);
+    transition: transform .5s cubic-bezier(.2,.8,.3,1.2), opacity .4s, left .5s, top .5s, max-width .5s, padding .4s;
     cursor: default; user-select: none;
   }
+  .slip .t { position: relative; z-index: 1; display: block; overflow: hidden; text-overflow: ellipsis; }
+  /* the top flap: lighter paper lying over the lower half, with a soft shadow where it lifts off */
+  .slip::after {
+    content: ''; position: absolute; left: 0; right: 0; top: 0; height: 64%;
+    background: linear-gradient(170deg, #fffef9 0%, #fbf7ea 55%, #efe7d4 100%);
+    box-shadow: 0 3px 4px rgba(60, 40, 10, .38), 0 1px 0 rgba(255,255,255,.6) inset;
+    border-radius: 2px 2px 1px 1px;
+    transform-origin: 50% 0; transition: height .45s ease, opacity .35s ease, transform .45s ease;
+  }
+  /* the crease: a thin highlight and shadow along the fold at the top */
+  .slip::before {
+    content: ''; position: absolute; left: 0; right: 0; top: 0; height: 3px; z-index: 2;
+    background: linear-gradient(180deg, rgba(0,0,0,.16), rgba(255,255,255,.55) 55%, rgba(0,0,0,0));
+    border-radius: 2px 2px 0 0;
+  }
+  .slip.folded {
+    font: 500 12px/1.2 system-ui, sans-serif; color: #8a8174; letter-spacing: .3px; padding: 7px 12px 16px; min-width: 64px; text-align: center;
+  }
+  .list li.folded span:first-child { font-style: italic; color: var(--muted); }
+  .list li.folded { padding-right: 12px; }
   .slip.dropping { animation: drop 1s both; z-index: 3; }
   @keyframes drop {
     0%   { transform: translateY(var(--fall, -400px)) rotate(calc(var(--r) - 50deg)) scale(1.12); opacity: 0; animation-timing-function: cubic-bezier(.5, 0, .9, .6); }
@@ -166,10 +189,14 @@
   }
   .bowl.revealed .slip { opacity: .25; }
   .bowl.revealed .slip.winner {
-    opacity: 1; left: 50%; top: 50%; max-width: 90%; font-size: 34px; padding: 14px 26px; z-index: 5;
+    opacity: 1; left: 50%; top: 50%; max-width: 90%; font-size: 34px; padding: 16px 26px; z-index: 5;
     transform: translate(-50%, -50%) rotate(-2deg) scale(1.08); box-shadow: 0 14px 40px var(--paper-shadow);
-    white-space: normal; text-align: center;
+    white-space: normal; text-align: center; background: var(--paper);
+    clip-path: polygon(0 2%, 2% 0, 98% 1%, 100% 4%, 99% 97%, 97% 100%, 2% 99%, 0 95%);
   }
+  .bowl.revealed .slip.winner::after { height: 0; opacity: 0; transform: rotateX(70deg); }
+  .bowl.revealed .slip.winner::before { opacity: .35; }
+  .bowl.revealed .slip.winner .t { white-space: normal; }
 
   .result { display: none; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
     margin: 14px 0 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
@@ -505,6 +532,7 @@
         el = document.createElement('div')
         el.className = 'slip'
         el.dataset.id = s.id
+        el.appendChild(Object.assign(document.createElement('span'), { className: 't' }))
         const h = hash(s.id)
         el.style.setProperty('--r', (((h >>> 16) % 30) - 15) + 'deg')
         el.style.setProperty('--d', -((h >>> 20) % 320) + 'ms')
@@ -520,7 +548,7 @@
       const drawn = state.draw && !state.draw.cleared && state.draw.winner === s.id && revealed === state.draw.id
       el.classList.toggle('folded', !mine && !drawn)
       el.title = mine ? `${s.text} — yours` : `${s.by}'s slip, folded`
-      el.textContent = mine || drawn ? s.text : s.by
+      el.querySelector('.t').textContent = mine || drawn ? s.text : s.by
     }
     for (const el of bowl.querySelectorAll('.slip')) if (!seen.has(el.dataset.id)) el.remove()
     layout(mixSeed ? [...slips].sort((a, b) => hash(mixSeed + a.id) - hash(mixSeed + b.id)) : slips)
