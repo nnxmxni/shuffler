@@ -564,8 +564,8 @@
       const drawn = state.draw && !state.draw.cleared && state.draw.winner === s.id && revealed === state.draw.id
       el.classList.toggle('folded', !drawn)
       el.classList.toggle('mine', mine)
-      el.title = drawn ? s.text : mine ? 'Your slip, folded' : `${s.by}'s slip, folded`
-      el.querySelector('.t').textContent = drawn ? s.text : mine ? '' : s.by
+      el.title = drawn ? s.text : 'A folded slip'
+      el.querySelector('.t').textContent = drawn ? s.text : ''
     }
     for (const el of bowl.querySelectorAll('.slip')) if (!seen.has(el.dataset.id)) el.remove()
     layout(mixSeed ? [...slips].sort((a, b) => hash(mixSeed + a.id) - hash(mixSeed + b.id)) : slips)
