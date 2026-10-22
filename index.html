@@ -63,15 +63,23 @@
   .lobby .invite { margin: -4px 0 0; font-size: 14px; color: var(--muted); }
   .lobby .invite code { font: 600 14px/1 ui-monospace, Menlo, monospace; letter-spacing: 2px; color: var(--ink); }
   .lobby button.primary { padding: 12px; font-size: 16px; }
-  .people { margin: 14px 0 0; font-size: 14px; color: var(--muted); }
-  .people b { color: var(--ink); font-weight: 600; }
+  .people { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 14px 0 0; font-size: 14px; color: var(--muted); }
+  .people .tag { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: var(--card); border: 1px solid var(--line); color: var(--ink); }
+  .people .tag.me { font-weight: 600; }
+  .people .tag.ok { border-color: #4caf6f; }
+  .people .tag.ok::before { content: '✓'; color: #4caf6f; font-weight: 700; }
+  .people .tag.wait::after { content: '…'; color: var(--accent); }
+  .people .tag.wait { color: var(--muted); }
+  .people .tag.wait b { color: var(--ink); font-weight: 500; }
+  .people .lead { margin-right: 2px; }
 
   header { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between; margin-bottom: 16px; }
   h1 { font: 700 26px/1.1 Caveat, cursive; margin: 0; letter-spacing: .5px; }
   h1 small { font: 500 13px/1 system-ui, sans-serif; color: var(--muted); margin-left: 8px; letter-spacing: 0; }
 
   .room { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--muted); }
-  .room code { font: 600 15px/1 ui-monospace, Menlo, monospace; color: var(--ink); letter-spacing: 2px; background: var(--card); border: 1px solid var(--line); padding: 6px 9px; border-radius: 8px; }
+  .room .chip { display: inline-flex; align-items: center; gap: 6px; background: var(--card); border: 1px solid var(--line); padding: 5px 6px 5px 10px; border-radius: 8px; }
+  .room code { font: 700 15px/1 ui-monospace, Menlo, monospace; color: var(--ink); letter-spacing: 2px; }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: #c9b36b; display: inline-block; }
   .dot.on { background: #4caf6f; }
 
@@ -86,9 +94,6 @@
   button:disabled { opacity: .45; cursor: default; transform: none; }
   button.small { padding: 5px 10px; font-size: 13px; border-radius: 8px; }
 
-  .joinForm { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: -4px 0 14px; font-size: 14px; color: var(--muted); }
-  .joinForm input { font: 600 15px/1 ui-monospace, Menlo, monospace; letter-spacing: 2px; text-transform: uppercase; width: 130px;
-    padding: 6px 9px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--ink); }
   .write { display: flex; gap: 8px; margin: 0 0 14px; }
   .write input {
     flex: 1; font: 600 20px/1 Caveat, cursive; padding: 10px 12px; border-radius: 10px;
@@ -103,6 +108,7 @@
     background: radial-gradient(ellipse at 50% 20%, var(--bowl) 0, var(--bowl) 55%, var(--bowl-edge) 100%);
     border: 2px solid var(--bowl-edge); overflow: hidden;
     box-shadow: inset 0 18px 40px rgba(0,0,0,.08), 0 10px 30px rgba(0,0,0,.08);
+    transition: height .4s ease;
   }
   .bowl .empty {
     position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted);
@@ -159,8 +165,6 @@
   .actions .spacer { flex: 1; }
   #ready.on { background: #2f7a4f; color: #fff; border-color: transparent; }
   #ready.on:hover { background: #2a6d46; }
-  .people .wait { color: var(--accent); }
-  .people .ok { color: #4caf6f; }
 
   .list { margin: 20px 0 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 8px; }
   .list li { display: flex; align-items: center; gap: 8px; background: var(--card); border: 1px solid var(--line);
@@ -176,6 +180,8 @@
   @media (max-width: 480px) {
     .bowl { height: 300px; }
     .slip { font-size: 17px; }
+    .actions #draw { flex: 1 1 100%; order: -1; padding: 12px; font-size: 16px; }
+    .write button { padding: 8px 12px; }
   }
 </style>
 </head>
@@ -199,16 +205,10 @@
     <h1>Paper Shuffler <small id="peers"></small></h1>
     <div class="room">
       <span class="dot" id="dot"></span><span id="signal">connecting…</span>
-      <span>Room</span> <code id="code"></code>
-      <button class="small" id="copy">Copy invite link</button>
-      <button class="small" id="newRoom" title="Start a fresh room">New</button>
+      <span class="chip">Room <code id="code"></code></span>
+      <button class="small primary" id="copy">Invite</button>
     </div>
   </header>
-  <form class="joinForm" id="joinForm" autocomplete="off">
-    <label for="joinCode">Join someone's bowl:</label>
-    <input id="joinCode" maxlength="12" placeholder="room code" spellcheck="false">
-    <button class="small" type="submit">Join</button>
-  </form>
 
   <form class="write" id="form" autocomplete="off">
     <input id="text" maxlength="60" placeholder="Write an option on a slip…" aria-label="Option">
@@ -219,13 +219,15 @@
     <div class="empty" id="empty">The bowl is empty.<br>Write some options and drop them in.</div>
   </div>
 
-  <div class="result" id="result">
+  <div class="result" id="result" aria-live="polite">
     <div><span class="who" id="who"></span><br><b id="winnerText"></b></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="small" id="takeOut">Take it out of the bowl</button>
       <button class="small" id="putBack">Put everything back</button>
     </div>
   </div>
+
+  <div class="people" id="people" aria-live="polite"></div>
 
   <div class="actions">
     <button id="ready" hidden>I'm done adding</button>
@@ -236,15 +238,13 @@
 
   <ul class="list" id="list"></ul>
 
-  <p class="people" id="people"></p>
-
   <footer>
     <span>You're in as <b id="me"></b></span>
     <button class="small" id="leave">Leave the bowl</button>
-    <span id="hint">Tell others the room code, or send the invite link. Everyone joins this bowl directly, browser to browser, and other people's slips stay folded until one is drawn.</span>
+    <span id="hint">Everyone joins directly, browser to browser. Other people's slips stay folded until one is drawn. Leave the bowl to switch rooms.</span>
   </footer>
 </main>
-<div class="toast" id="toast"></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script type="module">
   import {joinRoom, selfId, getRelaySockets} from 'https://cdn.jsdelivr.net/npm/trystero@0.26.0/+esm'
@@ -300,7 +300,6 @@
     store.set('shuffler:lastRoom', code)
     try { if (location.hash !== '#' + code) history.replaceState(null, '', '#' + code) } catch {}
     $('code').textContent = code
-    $('joinCode').value = ''
 
     state.slips.clear(); state.removed.clear(); state.draw = null
     for (const k of Object.keys(names)) if (k !== selfId) delete names[k]
@@ -351,9 +350,14 @@
   const resultShowing = () => !!(state.draw && state.draw.winner && !state.draw.cleared)
   function renderPeople() {
     const others = peerIds()
-    const tag = ok => ok ? ' <span class="ok">✓ done</span>' : ' <span class="wait">still writing…</span>'
-    const list = others.map(id => esc(names[id] || 'someone') + tag(readyMap[id])).join(', ')
-    $('people').innerHTML = others.length ? `In the bowl: <b>you</b>${tag(myReady)}, ${list}` : 'Nobody else is here yet. Share the room code.'
+    const tag = (label, ok, me) => ok
+      ? `<span class="tag ok${me ? ' me' : ''}" title="Done adding">${label} done</span>`
+      : `<span class="tag wait${me ? ' me' : ''}" title="Still writing"><b>${label}</b> still writing</span>`
+    if (!others.length) {
+      $('people').innerHTML = `<span class="lead">Nobody else is here yet.</span><button class="small" data-invite>Share room code ${esc(roomCode)}</button>`
+      return
+    }
+    $('people').innerHTML = `<span class="lead">In the bowl:</span>` + tag('you', myReady, true) + others.map(id => tag(esc(names[id] || 'someone'), readyMap[id])).join('')
   }
   function renderControls() {
     renderPeople()
@@ -376,31 +380,29 @@
     let open = 0, total = 0
     try { for (const ws of Object.values(getRelaySockets())) { total++; if (ws.readyState === 1) open++ } } catch {}
     $('dot').classList.toggle('on', open > 0)
-    $('signal').textContent = n ? 'connected' : open ? `looking for peers (${open} relay${open === 1 ? '' : 's'})` : total ? 'no relay reachable' : 'connecting…'
-    $('signal').title = open ? 'Peers find each other through public Nostr relays, then talk directly' : 'The page could not reach any relay; peers cannot find each other'
+    $('signal').textContent = n ? 'connected' : open ? 'waiting for others' : total ? 'offline' : 'connecting…'
+    $('signal').title = open ? `${open} relay${open === 1 ? '' : 's'} reachable. Peers find each other through public Nostr relays, then talk directly.` : 'The page could not reach any relay, so peers cannot find each other. Check your connection.'
   }
   setInterval(updatePeers, 2000)
 
-  // ---------- room controls ----------
-  $('joinForm').addEventListener('submit', e => {
-    e.preventDefault()
-    const code = cleanCode($('joinCode').value)
-    if (!code) return
-    if (code === roomCode) { toast('You are already in that room'); return }
-    connect(code)
-    toast('Joined room ' + code)
-  })
-  $('newRoom').addEventListener('click', () => connect(randomCode()))
+  // ---------- invite ----------
+  const inviteLink = () => location.origin + location.pathname + '#' + roomCode
+  async function invite() {
+    const link = inviteLink()
+    if (navigator.share) {
+      try { await navigator.share({ title: 'Paper Shuffler', text: `Join my bowl, room code ${roomCode}`, url: link }); return }
+      catch (e) { if (e && e.name === 'AbortError') return }
+    }
+    try { await navigator.clipboard.writeText(link); toast(`Invite link copied. The room code is ${roomCode}.`) }
+    catch { toast(`The room code is ${roomCode}. Link: ${link}`) }
+  }
+  $('copy').addEventListener('click', invite)
+  $('people').addEventListener('click', e => { if (e.target.closest('[data-invite]')) invite() })
   window.addEventListener('hashchange', () => {
     const c = cleanCode(location.hash.slice(1))
     if (!c) return
     if (!lobby.hidden) { $('lobbyCode').value = c; $('invite').hidden = false; $('inviteCode').textContent = c }
     else if (c !== roomCode) connect(c)
-  })
-  $('copy').addEventListener('click', async () => {
-    const link = location.href
-    try { await navigator.clipboard.writeText(link); toast('Invite link copied. The room code is ' + roomCode) }
-    catch { $('joinCode').value = roomCode; toast('Could not copy here. The room code is ' + roomCode) }
   })
 
   // ---------- slip actions ----------
@@ -523,30 +525,39 @@
   })
 
   // ---------- bowl layout: every slip gets its own slot, filled in the order they were dropped ----------
-  // Rows sit inside the bowl's oval, so the top and bottom rows are narrower than the middle one.
-  const ROWS = [{ y: .17, x0: .14, x1: .86 }, { y: .47, x0: .05, x1: .95 }, { y: .76, x0: .14, x1: .86 }]
+  // Rows are spread down the bowl's oval; the first and last rows are narrower than the middle ones.
+  // When there are more slips than slots, the bowl grows another row rather than hiding anything.
+  const BASE_H = () => window.innerWidth <= 480 ? 300 : 340
   let laidOut = []
   function layout(slips) {
     laidOut = slips
-    const W = bowl.clientWidth, H = bowl.clientHeight
+    const W = bowl.clientWidth
     if (!W) return
     const cols = Math.max(2, Math.min(5, Math.floor(W / 150)))
-    const slots = cols * ROWS.length
+    const rowsNeeded = Math.max(3, Math.ceil(slips.length / cols))
+    const rows = Math.min(rowsNeeded, 8)
+    const H = Math.max(BASE_H(), rows * 88 + 50)
+    bowl.style.height = H + 'px'
+    const slots = cols * rows
+    const rowSpec = r => {
+      const y = rows === 1 ? .5 : .16 + (r / (rows - 1)) * .68
+      const edge = r === 0 || r === rows - 1
+      return { y, x0: edge ? .14 : .05, x1: edge ? .86 : .95 }
+    }
     const d = state.draw
     slips.forEach((s, i) => {
       const el = bowl.querySelector(`[data-id="${s.id}"]`)
       if (!el) return
       if (bowl.classList.contains('revealed') && d && d.winner === s.id) { el.style.left = '50%'; el.style.top = '50%'; return }
       const slot = i % slots, cycle = Math.floor(i / slots)
-      const row = ROWS[Math.floor(slot / cols)], col = slot % cols
+      const row = rowSpec(Math.floor(slot / cols)), col = slot % cols
       const h = hash(s.id)
       const cellW = (row.x1 - row.x0) * W / cols
       const slipW = Math.min(cellW - 10, 180)
       el.style.setProperty('--w', slipW + 'px')
       const jx = ((h >> 4) % 11 - 5), jy = ((h >> 10) % 15 - 7)
-      // later "cycles" stack on top of earlier slips with a small offset, like a full bowl
-      const left = row.x0 * W + col * cellW + (cellW - Math.min(slipW, el.offsetWidth || slipW)) / 2 + jx + cycle * 14
-      const top = row.y * H - (el.offsetHeight || 36) / 2 + jy + cycle * 10
+      const left = row.x0 * W + col * cellW + (cellW - Math.min(slipW, el.offsetWidth || slipW)) / 2 + jx + cycle * 24
+      const top = row.y * H - (el.offsetHeight || 36) / 2 + jy + cycle * 18
       el.style.left = Math.round(left) + 'px'
       el.style.top = Math.round(top) + 'px'
     })
@@ -567,6 +578,7 @@
     setTimeout(() => {
       if (state.draw !== d) return
       bowl.classList.remove('shuffling')
+      try { navigator.vibrate && navigator.vibrate([30, 40, 70]) } catch {}
       revealed = d.id
       render()
       const el = bowl.querySelector(`[data-id="${d.winner}"]`)
