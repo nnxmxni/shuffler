@@ -211,6 +211,14 @@
   .bowl.revealed .slip.winner .t { white-space: normal; animation: appear .45s 1.05s ease-out both; }
   @keyframes appear { from { opacity: 0; transform: translateY(6px) scale(.96); } to { opacity: 1; transform: none; } }
   .slip.folded .t { min-height: 1.2em; min-width: 44px; }
+  .bowl.open .slip { animation: openInPlace .5s ease-out both; animation-delay: calc(var(--i, 0) * 80ms); z-index: 2; }
+  @keyframes openInPlace {
+    from { background: linear-gradient(180deg, #e2dac6, #cfc5ad); }
+    to   { background: var(--paper); box-shadow: 0 6px 14px var(--paper-shadow); padding: 9px 14px 9px; }
+  }
+  .bowl.open .slip::after { animation: unfold .7s cubic-bezier(.4, 0, .3, 1) both; animation-delay: calc(var(--i, 0) * 80ms); transition: none; }
+  .bowl.open .slip::before { animation: fadeCrease .4s both; animation-delay: calc(.3s + var(--i, 0) * 80ms); }
+  .bowl.open .slip .t { animation: appear .4s ease-out both; animation-delay: calc(.45s + var(--i, 0) * 80ms); }
 
   .result { display: none; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
     margin: 14px 0 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
@@ -290,6 +298,7 @@
   <div class="actions">
     <button id="ready" hidden>I'm done adding</button>
     <button class="primary" id="draw">Shuffle &amp; draw one</button>
+    <button id="revealAll" title="Unfold every slip in the bowl">Reveal all</button>
     <span class="spacer"></span>
     <button id="clear">Empty the bowl</button>
   </div>
@@ -388,17 +397,17 @@
     acts.draw.onMessage = d => {
       if (state.draw && d.t <= state.draw.t) return
       state.draw = d; save(); render(); maybeAnimate()
-      if (d.cleared && d.reason === 'added') toast(`${d.by} added a slip after the draw, so the result was cleared. Draw again.`)
+      if (d.cleared && d.reason === 'added') toast(d.what === 'reveal' ? `${d.by} added a slip after the reveal, so everything was folded back.` : `${d.by} added a slip after the draw, so the result was cleared. Draw again.`)
     }
 
     load()
     render()
     updatePeers()
     // A draw that happened before this page loaded just shows as a result, not an animation.
-    if (state.draw && state.draw.winner && !state.draw.cleared) {
+    if (state.draw && (state.draw.winner || state.draw.revealAll) && !state.draw.cleared) {
       animated = revealed = state.draw.id
       render()
-      const el = bowl.querySelector(`[data-id="${state.draw.winner}"]`)
+      const el = state.draw.winner && bowl.querySelector(`[data-id="${state.draw.winner}"]`)
       if (el) { el.classList.add('winner'); bowl.classList.add('revealed') }
       layout(laidOut)
     }
@@ -407,7 +416,7 @@
 
   const peerCount = () => { const p = room ? room.getPeers() : {}; return p instanceof Map ? p.size : Object.keys(p).length }
   const peerIds = () => { if (!room) return []; const p = room.getPeers(); return p instanceof Map ? [...p.keys()] : Object.keys(p) }
-  const resultShowing = () => !!(state.draw && state.draw.winner && !state.draw.cleared)
+  const resultShowing = () => !!(state.draw && (state.draw.winner || state.draw.revealAll) && !state.draw.cleared)
   function renderPeople() {
     const others = peerIds()
     const tag = (label, ok, me) => ok
@@ -425,6 +434,7 @@
     const waiting = others.filter(id => !readyMap[id]).map(id => names[id] || 'someone')
     const canDraw = state.slips.size >= 1 && waiting.length === 0
     $('draw').disabled = !canDraw || bowl.classList.contains('shuffling')
+    $('revealAll').disabled = $('draw').disabled
     $('draw').textContent = bowl.classList.contains('shuffling') ? 'Shaking the bowl…' : state.slips.size && waiting.length ? `Waiting for ${waiting.join(', ')}…` : 'Shuffle & draw one'
     $('ready').hidden = others.length === 0
     $('ready').textContent = myReady ? '✓ Done adding' : "I'm done adding"
@@ -479,8 +489,9 @@
     save(); render()
     if (myReady) setReady(false)
     if (resultShowing()) {
-      setDraw({ id: uid(), cleared: true, reason: 'added', by: myName(), t: Date.now() })
-      toast('You added a slip after the draw, so the result was cleared. Draw again.')
+      const what = state.draw.revealAll ? 'reveal' : 'draw'
+      setDraw({ id: uid(), cleared: true, reason: 'added', what, by: myName(), t: Date.now() })
+      toast(what === 'reveal' ? 'You added a slip after the reveal, so everything was folded back.' : 'You added a slip after the draw, so the result was cleared. Draw again.')
     }
   })
 
@@ -520,11 +531,19 @@
     setDraw({ id: uid(), winner, text: state.slips.get(winner).text, by: myName(), t: Date.now() })
   })
 
+  $('revealAll').addEventListener('click', () => {
+    if (state.slips.size < 1 || $('revealAll').disabled) return
+    if (!myReady && peerIds().length) setReady(true)
+    setDraw({ id: uid(), revealAll: true, count: state.slips.size, by: myName(), t: Date.now() })
+  })
+
   $('takeOut').addEventListener('click', () => {
     if (state.draw && state.draw.winner) remove([state.draw.winner])
     setDraw({ id: uid(), cleared: true, t: Date.now() })
   })
   $('putBack').addEventListener('click', () => setDraw({ id: uid(), cleared: true, t: Date.now() }))
+  // the "put back" button reads differently when everything is open
+  const putBackLabel = () => { $('putBack').textContent = state.draw && state.draw.revealAll ? 'Fold them all back' : 'Put everything back' }
 
 
   // ---------- rendering ----------
@@ -559,19 +578,27 @@
         bowl.appendChild(el)
       }
       const mine = s.owner === myId
-      const drawn = state.draw && !state.draw.cleared && state.draw.winner === s.id && revealed === state.draw.id
-      el.classList.toggle('folded', !drawn)
+      const live = state.draw && !state.draw.cleared && revealed === state.draw.id
+      const drawn = live && state.draw.winner === s.id
+      const open = live && state.draw.revealAll
+      el.classList.toggle('folded', !drawn && !open)
       el.classList.toggle('mine', mine)
-      el.title = drawn ? s.text : 'A folded slip'
-      el.querySelector('.t').textContent = drawn ? s.text : ''
+      el.title = drawn || open ? s.text : 'A folded slip'
+      el.querySelector('.t').textContent = drawn || open ? s.text : ''
     }
     for (const el of bowl.querySelectorAll('.slip')) if (!seen.has(el.dataset.id)) el.remove()
     layout(mixSeed ? [...slips].sort((a, b) => hash(mixSeed + a.id) - hash(mixSeed + b.id)) : slips)
 
     const d = state.draw
-    const showing = d && d.winner && !d.cleared && revealed === d.id
+    const showing = d && (d.winner || d.revealAll) && !d.cleared && revealed === d.id
     $('result').classList.toggle('show', !!showing)
-    if (showing) {
+    bowl.classList.toggle('open', !!(showing && d.revealAll))
+    putBackLabel()
+    if (showing && d.revealAll) {
+      $('who').textContent = `${d.by} tipped the bowl out`
+      $('winnerText').textContent = `All ${slips.length} slip${slips.length === 1 ? '' : 's'} are open`
+      $('takeOut').style.display = 'none'
+    } else if (showing) {
       $('who').textContent = `${d.by} shuffled and drew`
       $('winnerText').textContent = d.text
       $('takeOut').style.display = state.slips.has(d.winner) ? '' : 'none'
@@ -619,6 +646,7 @@
       const cellW = (row.x1 - row.x0) * W / cols
       const slipW = Math.min(cellW - 10, 180)
       el.style.setProperty('--w', slipW + 'px')
+      el.style.setProperty('--i', i)
       const jx = ((h >>> 4) % 11 - 5), jy = ((h >>> 10) % 15 - 7)
       const left = row.x0 * W + col * cellW + (cellW - Math.min(slipW, el.offsetWidth || slipW)) / 2 + jx + cycle * 24
       const top = row.y * H - (el.offsetHeight || 36) / 2 + jy + cycle * 18
@@ -634,7 +662,7 @@
   // ---------- the shuffle animation, played identically on every peer ----------
   function maybeAnimate() {
     const d = state.draw
-    if (!d || d.cleared || !d.winner || animated === d.id) return
+    if (!d || d.cleared || !(d.winner || d.revealAll) || animated === d.id) return
     animated = d.id
     bowl.classList.remove('revealed')
     bowl.querySelectorAll('.winner').forEach(e => e.classList.remove('winner'))
@@ -661,7 +689,7 @@
       mixSeed = d.id
       revealed = d.id
       render()
-      const el = bowl.querySelector(`[data-id="${d.winner}"]`)
+      const el = d.winner && bowl.querySelector(`[data-id="${d.winner}"]`)
       if (el) { el.classList.add('winner'); bowl.classList.add('revealed') }
       layout(laidOut)
       renderControls()

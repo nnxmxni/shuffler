@@ -73,4 +73,14 @@ await B.click('#takeOut')
 console.log('A lost one slip after B removed the winner:', await until(A, async () => (await bowlCount(A)) === before - 1, 10000), await listText(A))
 console.log('A result hidden:', await until(A, async () => !(await A.$eval('#result', e => e.classList.contains('show'))), 5000))
 
+// ---- reveal all: gated like the draw, then every slip opens on both sides ----
+if (!(await B.$eval('#ready', e => e.classList.contains('on')))) await B.click('#ready')
+console.log('A reveal unlocked:', await until(A, async () => await A.$eval('#revealAll', e => !e.disabled), 5000))
+await A.click('#revealAll')
+await new Promise(r => setTimeout(r, 3200))
+const openB = await B.$$eval('#bowl .slip', els => ({ all: els.every(e => !e.classList.contains('folded')), texts: els.map(e => e.textContent) }))
+console.log('B sees every slip open after A revealed all:', openB.all && openB.texts.includes('Sushi'), openB.texts, '|', await B.$eval('#who', e => e.textContent))
+await B.click('#putBack')
+console.log('A folded back after B put them away:', await until(A, async () => await A.$$eval('#bowl .slip', els => els.every(e => e.classList.contains('folded'))), 5000))
+
 await browser.close()
