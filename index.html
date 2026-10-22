@@ -1,0 +1,465 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Paper Shuffler</title>
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f3efe6;
+    --bowl: #e8e0cf;
+    --bowl-edge: #cfc4ad;
+    --card: #fbf8f1;
+    --line: #d9d0bd;
+    --ink: #221f1b;
+    --muted: #6f685c;
+    --accent: #c8502e;
+    --accent-ink: #fff;
+    --paper: #fffdf5;
+    --paper-ink: #2a2622;
+    --paper-shadow: rgba(60, 40, 10, .18);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #1a1816;
+      --bowl: #26231f;
+      --bowl-edge: #3b362f;
+      --card: #211e1a;
+      --line: #3a352e;
+      --ink: #efe9dc;
+      --muted: #a69e8f;
+      --accent: #e97a56;
+      --accent-ink: #1a1210;
+      --paper-shadow: rgba(0, 0, 0, .5);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #1a1816; --bowl: #26231f; --bowl-edge: #3b362f; --card: #211e1a; --line: #3a352e;
+    --ink: #efe9dc; --muted: #a69e8f; --accent: #e97a56; --accent-ink: #1a1210; --paper-shadow: rgba(0,0,0,.5);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font: 16px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+    min-height: 100dvh;
+  }
+  main { max-width: 760px; margin: 0 auto; padding: 20px 16px 48px; }
+
+  header { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  h1 { font: 700 26px/1.1 Caveat, cursive; margin: 0; letter-spacing: .5px; }
+  h1 small { font: 500 13px/1 system-ui, sans-serif; color: var(--muted); margin-left: 8px; letter-spacing: 0; }
+
+  .room { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--muted); }
+  .room code { font: 600 15px/1 ui-monospace, Menlo, monospace; color: var(--ink); letter-spacing: 2px; background: var(--card); border: 1px solid var(--line); padding: 6px 9px; border-radius: 8px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #c9b36b; display: inline-block; }
+  .dot.on { background: #4caf6f; }
+
+  button {
+    font: inherit; color: var(--ink); background: var(--card); border: 1px solid var(--line);
+    border-radius: 10px; padding: 8px 14px; cursor: pointer; transition: transform .08s, background .15s;
+  }
+  button:hover { background: var(--bowl); }
+  button:active { transform: translateY(1px); }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; font-weight: 600; }
+  button.primary:hover { filter: brightness(1.06); background: var(--accent); }
+  button:disabled { opacity: .45; cursor: default; transform: none; }
+  button.small { padding: 5px 10px; font-size: 13px; border-radius: 8px; }
+
+  .joinForm { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: -4px 0 14px; font-size: 14px; color: var(--muted); }
+  .joinForm input { font: 600 15px/1 ui-monospace, Menlo, monospace; letter-spacing: 2px; text-transform: uppercase; width: 130px;
+    padding: 6px 9px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--ink); }
+  .write { display: flex; gap: 8px; margin: 0 0 14px; }
+  .write input {
+    flex: 1; font: 600 20px/1 Caveat, cursive; padding: 10px 12px; border-radius: 10px;
+    border: 1px solid var(--line); background: var(--paper); color: var(--paper-ink);
+    background-image: repeating-linear-gradient(transparent 0 30px, rgba(0,0,0,.07) 30px 31px);
+  }
+  .write input::placeholder { color: #9a9184; font-weight: 500; }
+
+  /* The bowl */
+  .bowl {
+    position: relative; height: 340px; border-radius: 40% 40% 48% 48% / 30% 30% 60% 60%;
+    background: radial-gradient(ellipse at 50% 20%, var(--bowl) 0, var(--bowl) 55%, var(--bowl-edge) 100%);
+    border: 2px solid var(--bowl-edge); overflow: hidden;
+    box-shadow: inset 0 18px 40px rgba(0,0,0,.08), 0 10px 30px rgba(0,0,0,.08);
+  }
+  .bowl .empty {
+    position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted);
+    font: 500 22px/1.3 Caveat, cursive; text-align: center; padding: 0 30px; pointer-events: none;
+  }
+  .slip {
+    position: absolute; left: var(--x); top: var(--y); max-width: 180px;
+    padding: 8px 14px; background: var(--paper); color: var(--paper-ink);
+    font: 700 19px/1.15 Caveat, cursive; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    transform: rotate(var(--r)); box-shadow: 1px 2px 5px var(--paper-shadow);
+    clip-path: polygon(0 3%, 4% 0, 97% 2%, 100% 8%, 99% 95%, 95% 100%, 3% 98%, 0 90%);
+    transition: transform .5s cubic-bezier(.2,.8,.3,1.2), opacity .4s, left .5s, top .5s;
+    cursor: default; user-select: none;
+  }
+  .slip.folded {
+    font: 500 12px/1.2 system-ui, sans-serif; color: #8a8174; letter-spacing: .3px; padding: 10px 14px 12px; min-width: 64px; text-align: center;
+    background: linear-gradient(180deg, #f7f2e4 0 48%, #e9e2d2 48% 52%, #fffdf5 52%);
+    clip-path: polygon(0 6%, 6% 0, 94% 0, 100% 6%, 100% 94%, 94% 100%, 6% 100%, 0 94%);
+  }
+  .list li.folded span:first-child { font-style: italic; color: var(--muted); }
+  .list li.folded { padding-right: 12px; }
+  .bowl.shuffling .slip { animation: jumble .35s ease-in-out infinite alternate; animation-delay: var(--d); }
+  @keyframes jumble {
+    0%   { transform: translate(-18px, -10px) rotate(calc(var(--r) - 30deg)); }
+    50%  { transform: translate(10px, 14px) rotate(calc(var(--r) + 40deg)); }
+    100% { transform: translate(22px, -12px) rotate(calc(var(--r) + 10deg)); }
+  }
+  .bowl.revealed .slip { opacity: .25; }
+  .bowl.revealed .slip.winner {
+    opacity: 1; left: 50%; top: 50%; max-width: 90%; font-size: 34px; padding: 14px 26px; z-index: 5;
+    transform: translate(-50%, -50%) rotate(-2deg) scale(1.08); box-shadow: 0 14px 40px var(--paper-shadow);
+    white-space: normal; text-align: center;
+  }
+
+  .result { display: none; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+    margin: 14px 0 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+  .result.show { display: flex; }
+  .result .who { color: var(--muted); font-size: 14px; }
+  .result b { font: 700 24px/1 Caveat, cursive; }
+
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 0 0; align-items: center; }
+  .actions .spacer { flex: 1; }
+
+  .list { margin: 20px 0 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 8px; }
+  .list li { display: flex; align-items: center; gap: 8px; background: var(--card); border: 1px solid var(--line);
+    border-radius: 999px; padding: 4px 6px 4px 12px; font-size: 14px; }
+  .list li .by { color: var(--muted); font-size: 12px; }
+  .list li button { padding: 2px 8px; border-radius: 999px; font-size: 13px; line-height: 1.2; }
+
+  footer { margin-top: 28px; display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; color: var(--muted); font-size: 13px; }
+  footer input { font: inherit; padding: 5px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--ink); width: 140px; }
+  .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--ink); color: var(--bg);
+    padding: 8px 14px; border-radius: 999px; font-size: 14px; opacity: 0; transition: opacity .25s; pointer-events: none; }
+  .toast.show { opacity: 1; }
+
+  @media (max-width: 480px) {
+    .bowl { height: 300px; }
+    .slip { font-size: 17px; max-width: 150px; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Paper Shuffler <small id="peers"></small></h1>
+    <div class="room">
+      <span class="dot" id="dot"></span><span id="signal">connecting…</span>
+      <span>Room</span> <code id="code"></code>
+      <button class="small" id="copy">Copy invite link</button>
+      <button class="small" id="newRoom" title="Start a fresh room">New</button>
+    </div>
+  </header>
+  <form class="joinForm" id="joinForm" autocomplete="off">
+    <label for="joinCode">Join someone's bowl:</label>
+    <input id="joinCode" maxlength="12" placeholder="room code" spellcheck="false">
+    <button class="small" type="submit">Join</button>
+  </form>
+
+  <form class="write" id="form" autocomplete="off">
+    <input id="text" maxlength="60" placeholder="Write an option on a slip…" aria-label="Option">
+    <button class="primary" type="submit">Drop it in</button>
+  </form>
+
+  <div class="bowl" id="bowl">
+    <div class="empty" id="empty">The bowl is empty.<br>Write some options and drop them in.</div>
+  </div>
+
+  <div class="result" id="result">
+    <div><span class="who" id="who"></span><br><b id="winnerText"></b></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="small" id="takeOut">Take it out of the bowl</button>
+      <button class="small" id="putBack">Put everything back</button>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="primary" id="draw">Shuffle &amp; draw one</button>
+    <span class="spacer"></span>
+    <button id="clear">Empty the bowl</button>
+  </div>
+
+  <ul class="list" id="list"></ul>
+
+  <footer>
+    <label>Your name <input id="name" maxlength="20" placeholder="anonymous"></label>
+    <span id="hint">Tell others the room code, or send the invite link. Everyone joins this bowl directly, browser to browser, and other people's slips stay folded until one is drawn.</span>
+  </footer>
+</main>
+<div class="toast" id="toast"></div>
+
+<script type="module">
+  import {joinRoom, selfId, getRelaySockets} from 'https://cdn.jsdelivr.net/npm/trystero@0.26.0/+esm'
+
+  const $ = id => document.getElementById(id)
+  let toastTimer
+  const APP_ID = 'paper-shuffler-v1'
+  const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+  const randomCode = () => Array.from(crypto.getRandomValues(new Uint8Array(6)), b => ALPHABET[b % ALPHABET.length]).join('')
+  const cleanCode = c => String(c || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12)
+  const store = {
+    get: k => { try { return localStorage.getItem(k) } catch { return null } },
+    set: (k, v) => { try { localStorage.setItem(k, v) } catch {} }
+  }
+
+  // ---------- local identity ----------
+  const nameInput = $('name')
+  nameInput.value = store.get('shuffler:name') || ''
+  const myName = () => nameInput.value.trim() || 'anonymous'
+  const myId = store.get('shuffler:uid') || (() => {
+    const id = Array.from(crypto.getRandomValues(new Uint8Array(8)), b => b.toString(16).padStart(2, '0')).join('')
+    store.set('shuffler:uid', id); return id
+  })()
+
+  // ---------- shared state ----------
+  // slips: id -> {id, text, by, owner, t}; removed: tombstones; draw: last draw; names: peerId -> name
+  const state = { slips: new Map(), removed: new Set(), draw: null }
+  const names = { [selfId]: myName() }
+  let roomCode = '', room = null, storeKey = ''
+  let animated = null, revealed = null
+  let acts = null
+
+  const snapshot = () => ({ slips: [...state.slips.values()], removed: [...state.removed], draw: state.draw })
+  const save = () => store.set(storeKey, JSON.stringify(snapshot()))
+  const load = () => { try { const saved = JSON.parse(store.get(storeKey) || 'null'); if (saved) merge(saved) } catch {} }
+
+  function merge(remote) {
+    for (const s of remote.slips || []) if (s && s.id && !state.removed.has(s.id) && !state.slips.has(s.id)) state.slips.set(s.id, s)
+    for (const id of remote.removed || []) { state.removed.add(id); state.slips.delete(id) }
+    if (remote.draw && (!state.draw || remote.draw.t > state.draw.t)) state.draw = remote.draw
+  }
+
+  // ---------- networking ----------
+  // Optional: add a TURN server here if peers on strict networks can't connect directly,
+  // e.g. turnConfig: [{ urls: 'turn:your.turn.server:3478', username: '…', credential: '…' }]
+  const send = (name, data, target) => acts && acts[name].send(data, target ? { target } : undefined)
+
+  function connect(code) {
+    if (room) { try { room.leave() } catch {} }
+    roomCode = code
+    storeKey = 'shuffler:room:' + code
+    store.set('shuffler:lastRoom', code)
+    try { if (location.hash !== '#' + code) history.replaceState(null, '', '#' + code) } catch {}
+    $('code').textContent = code
+    $('joinCode').value = ''
+
+    state.slips.clear(); state.removed.clear(); state.draw = null
+    for (const k of Object.keys(names)) if (k !== selfId) delete names[k]
+    animated = revealed = null
+    bowl.classList.remove('revealed', 'shuffling')
+    bowl.querySelectorAll('.slip').forEach(e => e.remove())
+
+    room = joinRoom({ appId: APP_ID }, code, {
+      onJoinError: e => {
+        console.warn('join error', e.peerId, String(e.error && e.error.message || e.error))
+        toast('Found a peer but could not connect directly. Try a different network.')
+      }
+    })
+    acts = {}
+    for (const n of ['state', 'add', 'remove', 'draw', 'name']) acts[n] = room.makeAction(n)
+    room.onPeerJoin = id => { send('name', myName(), id); send('state', snapshot(), id); updatePeers(); toast('Someone joined the bowl') }
+    room.onPeerLeave = id => { delete names[id]; updatePeers() }
+    acts.name.onMessage = (n, { peerId }) => { names[peerId] = String(n).slice(0, 20); render() }
+    acts.state.onMessage = remote => { merge(remote); save(); render(); maybeAnimate() }
+    acts.add.onMessage = s => { if (!state.removed.has(s.id)) state.slips.set(s.id, s); save(); render() }
+    acts.remove.onMessage = ids => { for (const id of ids) { state.removed.add(id); state.slips.delete(id) } save(); render() }
+    acts.draw.onMessage = d => { if (!state.draw || d.t > state.draw.t) { state.draw = d; save(); render(); maybeAnimate() } }
+
+    load()
+    render()
+    updatePeers()
+    // A draw that happened before this page loaded just shows as a result, not an animation.
+    if (state.draw && state.draw.winner && !state.draw.cleared) {
+      animated = revealed = state.draw.id
+      render()
+      const el = bowl.querySelector(`[data-id="${state.draw.winner}"]`)
+      if (el) { el.classList.add('winner'); bowl.classList.add('revealed') }
+    }
+  }
+
+  const peerCount = () => { const p = room ? room.getPeers() : {}; return p instanceof Map ? p.size : Object.keys(p).length }
+  function updatePeers() {
+    const n = peerCount()
+    $('peers').textContent = n ? `${n + 1} here` : 'just you so far'
+    let open = 0, total = 0
+    try { for (const ws of Object.values(getRelaySockets())) { total++; if (ws.readyState === 1) open++ } } catch {}
+    $('dot').classList.toggle('on', open > 0)
+    $('signal').textContent = n ? 'connected' : open ? `looking for peers (${open} relay${open === 1 ? '' : 's'})` : total ? 'no relay reachable' : 'connecting…'
+    $('signal').title = open ? 'Peers find each other through public Nostr relays, then talk directly' : 'The page could not reach any relay; peers cannot find each other'
+  }
+  setInterval(updatePeers, 2000)
+
+  // ---------- room controls ----------
+  $('joinForm').addEventListener('submit', e => {
+    e.preventDefault()
+    const code = cleanCode($('joinCode').value)
+    if (!code) return
+    if (code === roomCode) { toast('You are already in that room'); return }
+    connect(code)
+    toast('Joined room ' + code)
+  })
+  $('newRoom').addEventListener('click', () => connect(randomCode()))
+  window.addEventListener('hashchange', () => { const c = cleanCode(location.hash.slice(1)); if (c && c !== roomCode) connect(c) })
+  $('copy').addEventListener('click', async () => {
+    const link = location.href
+    try { await navigator.clipboard.writeText(link); toast('Invite link copied. The room code is ' + roomCode) }
+    catch { $('joinCode').value = roomCode; toast('Could not copy here. The room code is ' + roomCode) }
+  })
+
+  // ---------- slip actions ----------
+  const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
+
+  $('form').addEventListener('submit', e => {
+    e.preventDefault()
+    const text = $('text').value.trim()
+    if (!text) return
+    const slip = { id: uid(), text, by: myName(), owner: myId, t: Date.now() }
+    state.slips.set(slip.id, slip)
+    send('add', slip)
+    $('text').value = ''
+    save(); render()
+  })
+
+  function remove(ids) {
+    for (const id of ids) { state.removed.add(id); state.slips.delete(id) }
+    send('remove', ids)
+    save(); render()
+  }
+
+  // Two-step clear instead of a confirm() dialog, which sandboxed frames block.
+  let clearArmed = null
+  $('clear').addEventListener('click', () => {
+    if (!state.slips.size) return
+    if (!clearArmed) {
+      $('clear').textContent = 'Really empty it for everyone?'
+      clearArmed = setTimeout(() => { clearArmed = null; $('clear').textContent = 'Empty the bowl' }, 4000)
+      return
+    }
+    clearTimeout(clearArmed); clearArmed = null
+    $('clear').textContent = 'Empty the bowl'
+    remove([...state.slips.keys()])
+    setDraw({ id: uid(), cleared: true, t: Date.now() })
+  })
+
+  function setDraw(d) { state.draw = d; send('draw', d); save(); render(); maybeAnimate() }
+
+  $('draw').addEventListener('click', () => {
+    const ids = [...state.slips.keys()]
+    if (ids.length < 1) return
+    // Fisher–Yates with a cryptographic source: the digital shake of the bowl
+    for (let i = ids.length - 1; i > 0; i--) {
+      const j = crypto.getRandomValues(new Uint32Array(1))[0] % (i + 1)
+      ;[ids[i], ids[j]] = [ids[j], ids[i]]
+    }
+    const winner = ids[0]
+    setDraw({ id: uid(), winner, text: state.slips.get(winner).text, by: myName(), t: Date.now() })
+  })
+
+  $('takeOut').addEventListener('click', () => {
+    if (state.draw && state.draw.winner) remove([state.draw.winner])
+    setDraw({ id: uid(), cleared: true, t: Date.now() })
+  })
+  $('putBack').addEventListener('click', () => setDraw({ id: uid(), cleared: true, t: Date.now() }))
+
+  nameInput.addEventListener('change', () => {
+    store.set('shuffler:name', nameInput.value.trim())
+    names[selfId] = myName()
+    send('name', myName())
+  })
+
+  // ---------- rendering ----------
+  const bowl = $('bowl')
+  const hash = s => { let h = 2166136261; for (const c of s) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619) } return h >>> 0 }
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))
+
+  function render() {
+    const slips = [...state.slips.values()].sort((a, b) => a.t - b.t)
+    $('empty').style.display = slips.length ? 'none' : 'grid'
+    $('draw').disabled = slips.length < 1
+    $('clear').disabled = slips.length < 1
+
+    const seen = new Set()
+    for (const s of slips) {
+      seen.add(s.id)
+      let el = bowl.querySelector(`[data-id="${s.id}"]`)
+      if (!el) {
+        el = document.createElement('div')
+        el.className = 'slip'
+        el.dataset.id = s.id
+        const h = hash(s.id)
+        el.style.setProperty('--x', (6 + (h % 60)) + '%')
+        el.style.setProperty('--y', (8 + ((h >> 8) % 62)) + '%')
+        el.style.setProperty('--r', (((h >> 16) % 36) - 18) + 'deg')
+        el.style.setProperty('--d', -((h >> 20) % 350) + 'ms')
+        bowl.appendChild(el)
+      }
+      const mine = s.owner === myId
+      const drawn = state.draw && !state.draw.cleared && state.draw.winner === s.id && revealed === state.draw.id
+      el.classList.toggle('folded', !mine && !drawn)
+      el.title = mine ? `${s.text} — yours` : `${s.by}'s slip, folded`
+      el.textContent = mine || drawn ? s.text : s.by
+    }
+    for (const el of bowl.querySelectorAll('.slip')) if (!seen.has(el.dataset.id)) el.remove()
+
+    const d = state.draw
+    const showing = d && d.winner && !d.cleared && revealed === d.id
+    $('result').classList.toggle('show', !!showing)
+    if (showing) {
+      $('who').textContent = `${d.by} shuffled and drew`
+      $('winnerText').textContent = d.text
+      $('takeOut').style.display = state.slips.has(d.winner) ? '' : 'none'
+    }
+    if (!showing) bowl.classList.remove('revealed'), bowl.querySelectorAll('.winner').forEach(e => e.classList.remove('winner'))
+
+    $('list').innerHTML = slips.map(s => s.owner === myId ? `
+      <li><span>${esc(s.text)}</span><span class="by">you</span>
+        <button data-remove="${s.id}" title="Tear it up">✕</button></li>` : `
+      <li class="folded"><span>folded slip</span><span class="by">${esc(s.by)}</span></li>`).join('')
+  }
+  $('list').addEventListener('click', e => {
+    const id = e.target.dataset.remove
+    if (id) remove([id])
+  })
+
+  // ---------- the shuffle animation, played identically on every peer ----------
+  function maybeAnimate() {
+    const d = state.draw
+    if (!d || d.cleared || !d.winner || animated === d.id) return
+    animated = d.id
+    bowl.classList.remove('revealed')
+    bowl.querySelectorAll('.winner').forEach(e => e.classList.remove('winner'))
+    bowl.classList.add('shuffling')
+    $('draw').disabled = true
+    setTimeout(() => {
+      if (state.draw !== d) return
+      bowl.classList.remove('shuffling')
+      revealed = d.id
+      render()
+      const el = bowl.querySelector(`[data-id="${d.winner}"]`)
+      if (el) { el.classList.add('winner'); bowl.classList.add('revealed') }
+      $('draw').disabled = state.slips.size < 1
+    }, 1500)
+  }
+
+  function toast(msg) {
+    $('toast').textContent = msg
+    $('toast').classList.add('show')
+    clearTimeout(toastTimer)
+    toastTimer = setTimeout(() => $('toast').classList.remove('show'), 2600)
+  }
+
+  // ---------- go ----------
+  connect(cleanCode(location.hash.slice(1)) || cleanCode(store.get('shuffler:lastRoom')) || randomCode())
+</script>
+</body>
+</html>
