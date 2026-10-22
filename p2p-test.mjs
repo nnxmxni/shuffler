@@ -18,6 +18,7 @@ const mk = async label => {
   return page
 }
 const listText = p => p.$$eval('#list li span:first-child', els => els.map(e => e.textContent))
+const bowlCount = p => p.$$eval('#bowl .slip', els => els.length)
 const until = async (p, fn, ms = 45000) => {
   const t0 = Date.now()
   while (Date.now() - t0 < ms) { if (await fn()) return true; await new Promise(r => setTimeout(r, 500)) }
@@ -34,13 +35,13 @@ console.log('Entering without a name is blocked:', lobbyBlocked)
 const B = await mk('B')
 console.log('B entered A\'s room via the lobby:', await B.$eval('#code', e => e.textContent) === room)
 const t0 = Date.now()
-const synced = await until(B, async () => (await listText(B)).length === 2)
-console.log('B sees A slips folded, not the text:', synced && JSON.stringify(await listText(B)) === '["folded slip","folded slip"]', `(${((Date.now() - t0) / 1000).toFixed(1)}s)`, await listText(B))
+const synced = await until(B, async () => (await bowlCount(B)) === 2)
+console.log('B sees two folded slips in the bowl and nothing in its list:', synced && (await listText(B)).length === 0, `(${((Date.now() - t0) / 1000).toFixed(1)}s)`, await listText(B))
 console.log('A header:', await A.$eval('#peers', e => e.textContent), '| B header:', await B.$eval('#peers', e => e.textContent))
 console.log('A sees Ben in the room:', await until(A, async () => /Ben/.test(await A.$eval('#people', e => e.textContent)), 5000), '|', await A.$eval('#people', e => e.textContent))
 
 await add(B, 'Tacos')
-console.log('A got a folded slip from B:', await until(A, async () => (await listText(A)).length === 3, 10000), await listText(A))
+console.log('A got a folded slip from B in the bowl, list still only its own:', await until(A, async () => (await bowlCount(A)) === 3, 10000), await listText(A))
 console.log('B bowl shows no A text:', await B.$$eval('#bowl .slip', els => els.every(e => !/Pizza|Sushi/.test(e.textContent))))
 
 // ---- ready check ----
@@ -67,9 +68,9 @@ await B.click('#ready')
 await until(A, async () => await A.$eval('#draw', e => !e.disabled), 5000)
 await A.click('#draw')
 await new Promise(r => setTimeout(r, 2500))
-const before = (await listText(A)).length
+const before = await bowlCount(A)
 await B.click('#takeOut')
-console.log('A lost one slip after B removed the winner:', await until(A, async () => (await listText(A)).length === before - 1, 10000), await listText(A))
+console.log('A lost one slip after B removed the winner:', await until(A, async () => (await bowlCount(A)) === before - 1, 10000), await listText(A))
 console.log('A result hidden:', await until(A, async () => !(await A.$eval('#result', e => e.classList.contains('show'))), 5000))
 
 await browser.close()

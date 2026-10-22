@@ -146,8 +146,6 @@
   .slip.folded {
     font: 500 12px/1.2 system-ui, sans-serif; color: #8a8174; letter-spacing: .3px; padding: 7px 12px 16px; min-width: 64px; text-align: center;
   }
-  .list li.folded span:first-child { font-style: italic; color: var(--muted); }
-  .list li.folded { padding-right: 12px; }
   .slip.dropping { animation: dropFolded 1s both; z-index: 3; }
   @keyframes drop {
     0%   { transform: translateY(var(--fall, -400px)) rotate(calc(var(--r) - 50deg)) scale(1.12); opacity: 0; animation-timing-function: cubic-bezier(.5, 0, .9, .6); }
@@ -580,10 +578,10 @@
     }
     if (!showing) { bowl.classList.remove('revealed'); bowl.querySelectorAll('.winner').forEach(e => e.classList.remove('winner')); layout(laidOut) }
 
-    $('list').innerHTML = slips.map(s => s.owner === myId ? `
-      <li><span>${esc(s.text)}</span><span class="by">you</span>
-        <button data-remove="${s.id}" title="Tear it up">✕</button></li>` : `
-      <li class="folded"><span>folded slip</span><span class="by">${esc(s.by)}</span></li>`).join('')
+    // only your own slips are listed; everyone else's exist only as folded paper in the bowl
+    $('list').innerHTML = slips.filter(s => s.owner === myId).map(s => `
+      <li><span>${esc(s.text)}</span><span class="by">yours</span>
+        <button data-remove="${s.id}" title="Tear it up">✕</button></li>`).join('')
   }
   $('list').addEventListener('click', e => {
     const id = e.target.dataset.remove
