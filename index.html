@@ -141,11 +141,28 @@
     82%  { transform: translateY(-7px) rotate(calc(var(--r) + 2deg)); animation-timing-function: ease-in; }
     100% { transform: translateY(0) rotate(var(--r)); opacity: 1; }
   }
-  .bowl.shuffling .slip { animation: jumble .35s ease-in-out infinite alternate; animation-delay: var(--d); }
-  @keyframes jumble {
-    0%   { transform: translate(-18px, -10px) rotate(calc(var(--r) - 30deg)); }
-    50%  { transform: translate(10px, 14px) rotate(calc(var(--r) + 40deg)); }
-    100% { transform: translate(22px, -12px) rotate(calc(var(--r) + 10deg)); }
+  .bowl.shuffling { animation: shake 1.6s ease-in-out both; }
+  @keyframes shake {
+    0%   { transform: translate(0, 0) rotate(0); }
+    8%   { transform: translate(-18px, 3px) rotate(-3deg); }
+    16%  { transform: translate(18px, -2px) rotate(3deg); }
+    24%  { transform: translate(-17px, 3px) rotate(-2.8deg); }
+    32%  { transform: translate(16px, -2px) rotate(2.6deg); }
+    40%  { transform: translate(-14px, 2px) rotate(-2.2deg); }
+    48%  { transform: translate(13px, -2px) rotate(2deg); }
+    56%  { transform: translate(-11px, 2px) rotate(-1.6deg); }
+    64%  { transform: translate(9px, -1px) rotate(1.3deg); }
+    72%  { transform: translate(-7px, 1px) rotate(-1deg); }
+    80%  { transform: translate(5px, -1px) rotate(.7deg); }
+    88%  { transform: translate(-3px, 0) rotate(-.4deg); }
+    100% { transform: translate(0, 0) rotate(0); }
+  }
+  /* slips lag behind the bowl and get thrown about; each has its own throw (--tx/--ty) and phase (--d) */
+  .bowl.shuffling .slip { animation: tumble .32s ease-in-out infinite alternate; animation-delay: var(--d); transition: none; }
+  @keyframes tumble {
+    0%   { transform: translate(calc(var(--tx) * -1), calc(var(--ty) * .6)) rotate(calc(var(--r) - 40deg)); }
+    50%  { transform: translate(calc(var(--tx) * .3), calc(var(--ty) * -1)) rotate(calc(var(--r) + 20deg)); }
+    100% { transform: translate(var(--tx), var(--ty)) rotate(calc(var(--r) + 50deg)); }
   }
   .bowl.revealed .slip { opacity: .25; }
   .bowl.revealed .slip.winner {
@@ -272,6 +289,7 @@
   // slips: id -> {id, text, by, owner, t}; removed: tombstones; draw: last draw; names: peerId -> name
   const state = { slips: new Map(), removed: new Set(), draw: null }
   const names = {}
+  let mixSeed = ''     // set by each shuffle so the slips settle into new spots afterwards
   const readyMap = {}   // peerId -> true once that person says they're done adding
   let myReady = false
   let roomCode = '', room = null, storeKey = ''
@@ -305,6 +323,7 @@
     for (const k of Object.keys(names)) if (k !== selfId) delete names[k]
     for (const k of Object.keys(readyMap)) delete readyMap[k]
     myReady = false
+    mixSeed = ''
     animated = revealed = null
     bowlReady = false
     bowl.classList.remove('revealed', 'shuffling')
@@ -365,7 +384,7 @@
     const waiting = others.filter(id => !readyMap[id]).map(id => names[id] || 'someone')
     const canDraw = state.slips.size >= 1 && waiting.length === 0
     $('draw').disabled = !canDraw || bowl.classList.contains('shuffling')
-    $('draw').textContent = state.slips.size && waiting.length ? `Waiting for ${waiting.join(', ')}…` : 'Shuffle & draw one'
+    $('draw').textContent = bowl.classList.contains('shuffling') ? 'Shaking the bowl…' : state.slips.size && waiting.length ? `Waiting for ${waiting.join(', ')}…` : 'Shuffle & draw one'
     $('ready').hidden = others.length === 0
     $('ready').textContent = myReady ? '✓ Done adding' : "I'm done adding"
     $('ready').title = myReady ? 'Tap to say you want to add more' : 'Tell the others you have nothing more to add'
@@ -488,7 +507,9 @@
         el.dataset.id = s.id
         const h = hash(s.id)
         el.style.setProperty('--r', (((h >>> 16) % 30) - 15) + 'deg')
-        el.style.setProperty('--d', -((h >>> 20) % 350) + 'ms')
+        el.style.setProperty('--d', -((h >>> 20) % 320) + 'ms')
+        el.style.setProperty('--tx', (((h >>> 8) % 70) - 35 + (h & 1 ? 18 : -18)) + 'px')
+        el.style.setProperty('--ty', (((h >>> 12) % 44) - 22) + 'px')
         if (bowlReady) {
           el.classList.add('dropping')
           el.addEventListener('animationend', () => el.classList.remove('dropping'), { once: true })
@@ -502,7 +523,7 @@
       el.textContent = mine || drawn ? s.text : s.by
     }
     for (const el of bowl.querySelectorAll('.slip')) if (!seen.has(el.dataset.id)) el.remove()
-    layout(slips)
+    layout(mixSeed ? [...slips].sort((a, b) => hash(mixSeed + a.id) - hash(mixSeed + b.id)) : slips)
 
     const d = state.draw
     const showing = d && d.winner && !d.cleared && revealed === d.id
@@ -512,7 +533,7 @@
       $('winnerText').textContent = d.text
       $('takeOut').style.display = state.slips.has(d.winner) ? '' : 'none'
     }
-    if (!showing) { bowl.classList.remove('revealed'); bowl.querySelectorAll('.winner').forEach(e => e.classList.remove('winner')); layout(slips) }
+    if (!showing) { bowl.classList.remove('revealed'); bowl.querySelectorAll('.winner').forEach(e => e.classList.remove('winner')); layout(laidOut) }
 
     $('list').innerHTML = slips.map(s => s.owner === myId ? `
       <li><span>${esc(s.text)}</span><span class="by">you</span>
@@ -575,18 +596,20 @@
     bowl.classList.remove('revealed')
     bowl.querySelectorAll('.winner').forEach(e => e.classList.remove('winner'))
     bowl.classList.add('shuffling')
+    try { navigator.vibrate && navigator.vibrate([70, 50, 70, 50, 60, 60, 50, 80, 40]) } catch {}
     renderControls()
     setTimeout(() => {
       if (state.draw !== d) return
       bowl.classList.remove('shuffling')
       try { navigator.vibrate && navigator.vibrate([30, 40, 70]) } catch {}
+      mixSeed = d.id
       revealed = d.id
       render()
       const el = bowl.querySelector(`[data-id="${d.winner}"]`)
       if (el) { el.classList.add('winner'); bowl.classList.add('revealed') }
       layout(laidOut)
       renderControls()
-    }, 1500)
+    }, 1600)
   }
 
   function toast(msg) {
