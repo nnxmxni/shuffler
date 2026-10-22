@@ -109,13 +109,25 @@
     font: 500 22px/1.3 Caveat, cursive; text-align: center; padding: 0 30px; pointer-events: none;
   }
   .slip {
-    position: absolute; left: var(--x); top: var(--y); max-width: 180px;
+    position: absolute; left: 0; top: 0; max-width: var(--w, 180px);
     padding: 8px 14px; background: var(--paper); color: var(--paper-ink);
     font: 700 19px/1.15 Caveat, cursive; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     transform: rotate(var(--r)); box-shadow: 1px 2px 5px var(--paper-shadow);
     clip-path: polygon(0 3%, 4% 0, 97% 2%, 100% 8%, 99% 95%, 95% 100%, 3% 98%, 0 90%);
-    transition: transform .5s cubic-bezier(.2,.8,.3,1.2), opacity .4s, left .5s, top .5s;
+    transition: transform .5s cubic-bezier(.2,.8,.3,1.2), opacity .4s, left .5s, top .5s, max-width .5s;
     cursor: default; user-select: none;
+  }
+  .slip.dropping { animation: drop .75s cubic-bezier(.35,1.35,.55,1) both; }
+  @keyframes drop {
+    0%   { transform: translateY(-340px) rotate(calc(var(--r) - 70deg)) scale(1.15); opacity: 0; }
+    30%  { opacity: 1; }
+    100% { transform: translateY(0) rotate(var(--r)) scale(1); opacity: 1; }
+  }
+  .slip.dropping.folded { animation-name: dropFolded; }
+  @keyframes dropFolded {
+    0%   { transform: translateY(-340px) rotate(calc(var(--r) + 50deg)); opacity: 0; }
+    30%  { opacity: 1; }
+    100% { transform: translateY(0) rotate(var(--r)); opacity: 1; }
   }
   .slip.folded {
     font: 500 12px/1.2 system-ui, sans-serif; color: #8a8174; letter-spacing: .3px; padding: 10px 14px 12px; min-width: 64px; text-align: center;
@@ -159,7 +171,7 @@
 
   @media (max-width: 480px) {
     .bowl { height: 300px; }
-    .slip { font-size: 17px; max-width: 150px; }
+    .slip { font-size: 17px; }
   }
 </style>
 </head>
@@ -286,6 +298,7 @@
     state.slips.clear(); state.removed.clear(); state.draw = null
     for (const k of Object.keys(names)) if (k !== selfId) delete names[k]
     animated = revealed = null
+    bowlReady = false
     bowl.classList.remove('revealed', 'shuffling')
     bowl.querySelectorAll('.slip').forEach(e => e.remove())
 
@@ -314,7 +327,9 @@
       render()
       const el = bowl.querySelector(`[data-id="${state.draw.winner}"]`)
       if (el) { el.classList.add('winner'); bowl.classList.add('revealed') }
+      layout(laidOut)
     }
+    bowlReady = true
   }
 
   const peerCount = () => { const p = room ? room.getPeers() : {}; return p instanceof Map ? p.size : Object.keys(p).length }
@@ -433,10 +448,12 @@
         el.className = 'slip'
         el.dataset.id = s.id
         const h = hash(s.id)
-        el.style.setProperty('--x', (6 + (h % 60)) + '%')
-        el.style.setProperty('--y', (8 + ((h >> 8) % 62)) + '%')
-        el.style.setProperty('--r', (((h >> 16) % 36) - 18) + 'deg')
+        el.style.setProperty('--r', (((h >> 16) % 30) - 15) + 'deg')
         el.style.setProperty('--d', -((h >> 20) % 350) + 'ms')
+        if (bowlReady) {
+          el.classList.add('dropping')
+          el.addEventListener('animationend', () => el.classList.remove('dropping'), { once: true })
+        }
         bowl.appendChild(el)
       }
       const mine = s.owner === myId
@@ -446,6 +463,7 @@
       el.textContent = mine || drawn ? s.text : s.by
     }
     for (const el of bowl.querySelectorAll('.slip')) if (!seen.has(el.dataset.id)) el.remove()
+    layout(slips)
 
     const d = state.draw
     const showing = d && d.winner && !d.cleared && revealed === d.id
@@ -455,7 +473,7 @@
       $('winnerText').textContent = d.text
       $('takeOut').style.display = state.slips.has(d.winner) ? '' : 'none'
     }
-    if (!showing) bowl.classList.remove('revealed'), bowl.querySelectorAll('.winner').forEach(e => e.classList.remove('winner'))
+    if (!showing) { bowl.classList.remove('revealed'); bowl.querySelectorAll('.winner').forEach(e => e.classList.remove('winner')); layout(slips) }
 
     $('list').innerHTML = slips.map(s => s.owner === myId ? `
       <li><span>${esc(s.text)}</span><span class="by">you</span>
@@ -466,6 +484,39 @@
     const id = e.target.dataset.remove
     if (id) remove([id])
   })
+
+  // ---------- bowl layout: every slip gets its own slot, filled in the order they were dropped ----------
+  // Rows sit inside the bowl's oval, so the top and bottom rows are narrower than the middle one.
+  const ROWS = [{ y: .17, x0: .14, x1: .86 }, { y: .47, x0: .05, x1: .95 }, { y: .76, x0: .14, x1: .86 }]
+  let laidOut = []
+  function layout(slips) {
+    laidOut = slips
+    const W = bowl.clientWidth, H = bowl.clientHeight
+    if (!W) return
+    const cols = Math.max(2, Math.min(5, Math.floor(W / 150)))
+    const slots = cols * ROWS.length
+    const d = state.draw
+    slips.forEach((s, i) => {
+      const el = bowl.querySelector(`[data-id="${s.id}"]`)
+      if (!el) return
+      if (bowl.classList.contains('revealed') && d && d.winner === s.id) { el.style.left = '50%'; el.style.top = '50%'; return }
+      const slot = i % slots, cycle = Math.floor(i / slots)
+      const row = ROWS[Math.floor(slot / cols)], col = slot % cols
+      const h = hash(s.id)
+      const cellW = (row.x1 - row.x0) * W / cols
+      const slipW = Math.min(cellW - 10, 180)
+      el.style.setProperty('--w', slipW + 'px')
+      const jx = ((h >> 4) % 11 - 5), jy = ((h >> 10) % 15 - 7)
+      // later "cycles" stack on top of earlier slips with a small offset, like a full bowl
+      const left = row.x0 * W + col * cellW + (cellW - Math.min(slipW, el.offsetWidth || slipW)) / 2 + jx + cycle * 14
+      const top = row.y * H - (el.offsetHeight || 36) / 2 + jy + cycle * 10
+      el.style.left = Math.round(left) + 'px'
+      el.style.top = Math.round(top) + 'px'
+    })
+  }
+  let resizeTimer
+  window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => layout(laidOut), 120) })
+  let bowlReady = false
 
   // ---------- the shuffle animation, played identically on every peer ----------
   function maybeAnimate() {
@@ -483,6 +534,7 @@
       render()
       const el = bowl.querySelector(`[data-id="${d.winner}"]`)
       if (el) { el.classList.add('winner'); bowl.classList.add('revealed') }
+      layout(laidOut)
       $('draw').disabled = state.slips.size < 1
     }, 1500)
   }
