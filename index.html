@@ -157,6 +157,10 @@
 
   .actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 0 0; align-items: center; }
   .actions .spacer { flex: 1; }
+  #ready.on { background: #2f7a4f; color: #fff; border-color: transparent; }
+  #ready.on:hover { background: #2a6d46; }
+  .people .wait { color: var(--accent); }
+  .people .ok { color: #4caf6f; }
 
   .list { margin: 20px 0 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 8px; }
   .list li { display: flex; align-items: center; gap: 8px; background: var(--card); border: 1px solid var(--line);
@@ -224,6 +228,7 @@
   </div>
 
   <div class="actions">
+    <button id="ready" hidden>I'm done adding</button>
     <button class="primary" id="draw">Shuffle &amp; draw one</button>
     <span class="spacer"></span>
     <button id="clear">Empty the bowl</button>
@@ -267,6 +272,8 @@
   // slips: id -> {id, text, by, owner, t}; removed: tombstones; draw: last draw; names: peerId -> name
   const state = { slips: new Map(), removed: new Set(), draw: null }
   const names = {}
+  const readyMap = {}   // peerId -> true once that person says they're done adding
+  let myReady = false
   let roomCode = '', room = null, storeKey = ''
   let animated = null, revealed = null
   let acts = null
@@ -297,6 +304,8 @@
 
     state.slips.clear(); state.removed.clear(); state.draw = null
     for (const k of Object.keys(names)) if (k !== selfId) delete names[k]
+    for (const k of Object.keys(readyMap)) delete readyMap[k]
+    myReady = false
     animated = revealed = null
     bowlReady = false
     bowl.classList.remove('revealed', 'shuffling')
@@ -309,14 +318,19 @@
       }
     })
     acts = {}
-    for (const n of ['state', 'add', 'remove', 'draw', 'name']) acts[n] = room.makeAction(n)
-    room.onPeerJoin = id => { send('name', myName(), id); send('state', snapshot(), id); updatePeers(); toast('Someone joined the bowl') }
-    room.onPeerLeave = id => { delete names[id]; updatePeers() }
-    acts.name.onMessage = (n, { peerId }) => { names[peerId] = String(n).slice(0, 20); renderPeople() }
+    for (const n of ['state', 'add', 'remove', 'draw', 'name', 'ready']) acts[n] = room.makeAction(n)
+    room.onPeerJoin = id => { send('name', myName(), id); send('ready', myReady, id); send('state', snapshot(), id); updatePeers(); toast('Someone joined the bowl') }
+    room.onPeerLeave = id => { delete names[id]; delete readyMap[id]; updatePeers() }
+    acts.ready.onMessage = (v, { peerId }) => { readyMap[peerId] = !!v; renderControls() }
+    acts.name.onMessage = (n, { peerId }) => { names[peerId] = String(n).slice(0, 20); renderControls() }
     acts.state.onMessage = remote => { merge(remote); save(); render(); maybeAnimate() }
-    acts.add.onMessage = s => { if (!state.removed.has(s.id)) state.slips.set(s.id, s); save(); render() }
+    acts.add.onMessage = (s, { peerId }) => { if (!state.removed.has(s.id)) state.slips.set(s.id, s); readyMap[peerId] = false; save(); render() }
     acts.remove.onMessage = ids => { for (const id of ids) { state.removed.add(id); state.slips.delete(id) } save(); render() }
-    acts.draw.onMessage = d => { if (!state.draw || d.t > state.draw.t) { state.draw = d; save(); render(); maybeAnimate() } }
+    acts.draw.onMessage = d => {
+      if (state.draw && d.t <= state.draw.t) return
+      state.draw = d; save(); render(); maybeAnimate()
+      if (d.cleared && d.reason === 'added') toast(`${d.by} added a slip after the draw, so the result was cleared. Draw again.`)
+    }
 
     load()
     render()
@@ -333,15 +347,32 @@
   }
 
   const peerCount = () => { const p = room ? room.getPeers() : {}; return p instanceof Map ? p.size : Object.keys(p).length }
+  const peerIds = () => { if (!room) return []; const p = room.getPeers(); return p instanceof Map ? [...p.keys()] : Object.keys(p) }
+  const resultShowing = () => !!(state.draw && state.draw.winner && !state.draw.cleared)
   function renderPeople() {
-    const others = room ? Object.keys(room.getPeers() instanceof Map ? Object.fromEntries(room.getPeers()) : room.getPeers()) : []
-    const list = others.map(id => esc(names[id] || 'someone')).join(', ')
-    $('people').innerHTML = others.length ? `In the bowl: <b>you</b>, ${list}` : 'Nobody else is here yet. Share the room code.'
+    const others = peerIds()
+    const tag = ok => ok ? ' <span class="ok">✓ done</span>' : ' <span class="wait">still writing…</span>'
+    const list = others.map(id => esc(names[id] || 'someone') + tag(readyMap[id])).join(', ')
+    $('people').innerHTML = others.length ? `In the bowl: <b>you</b>${tag(myReady)}, ${list}` : 'Nobody else is here yet. Share the room code.'
   }
+  function renderControls() {
+    renderPeople()
+    const others = peerIds()
+    const waiting = others.filter(id => !readyMap[id]).map(id => names[id] || 'someone')
+    const canDraw = state.slips.size >= 1 && waiting.length === 0
+    $('draw').disabled = !canDraw || bowl.classList.contains('shuffling')
+    $('draw').textContent = state.slips.size && waiting.length ? `Waiting for ${waiting.join(', ')}…` : 'Shuffle & draw one'
+    $('ready').hidden = others.length === 0
+    $('ready').textContent = myReady ? '✓ Done adding' : "I'm done adding"
+    $('ready').title = myReady ? 'Tap to say you want to add more' : 'Tell the others you have nothing more to add'
+    $('ready').classList.toggle('on', myReady)
+  }
+  function setReady(v) { myReady = v; send('ready', v); renderControls() }
+  $('ready').addEventListener('click', () => setReady(!myReady))
   function updatePeers() {
     const n = peerCount()
     $('peers').textContent = n ? `${n + 1} here` : 'just you so far'
-    renderPeople()
+    renderControls()
     let open = 0, total = 0
     try { for (const ws of Object.values(getRelaySockets())) { total++; if (ws.readyState === 1) open++ } } catch {}
     $('dot').classList.toggle('on', open > 0)
@@ -384,6 +415,11 @@
     send('add', slip)
     $('text').value = ''
     save(); render()
+    if (myReady) setReady(false)
+    if (resultShowing()) {
+      setDraw({ id: uid(), cleared: true, reason: 'added', by: myName(), t: Date.now() })
+      toast('You added a slip after the draw, so the result was cleared. Draw again.')
+    }
   })
 
   function remove(ids) {
@@ -411,7 +447,8 @@
 
   $('draw').addEventListener('click', () => {
     const ids = [...state.slips.keys()]
-    if (ids.length < 1) return
+    if (ids.length < 1 || $('draw').disabled) return
+    if (!myReady && peerIds().length) setReady(true)
     // Fisher–Yates with a cryptographic source: the digital shake of the bowl
     for (let i = ids.length - 1; i > 0; i--) {
       const j = crypto.getRandomValues(new Uint32Array(1))[0] % (i + 1)
@@ -436,8 +473,8 @@
   function render() {
     const slips = [...state.slips.values()].sort((a, b) => a.t - b.t)
     $('empty').style.display = slips.length ? 'none' : 'grid'
-    $('draw').disabled = slips.length < 1
     $('clear').disabled = slips.length < 1
+    renderControls()
 
     const seen = new Set()
     for (const s of slips) {
@@ -526,7 +563,7 @@
     bowl.classList.remove('revealed')
     bowl.querySelectorAll('.winner').forEach(e => e.classList.remove('winner'))
     bowl.classList.add('shuffling')
-    $('draw').disabled = true
+    renderControls()
     setTimeout(() => {
       if (state.draw !== d) return
       bowl.classList.remove('shuffling')
@@ -535,7 +572,7 @@
       const el = bowl.querySelector(`[data-id="${d.winner}"]`)
       if (el) { el.classList.add('winner'); bowl.classList.add('revealed') }
       layout(laidOut)
-      $('draw').disabled = state.slips.size < 1
+      renderControls()
     }, 1500)
   }
 

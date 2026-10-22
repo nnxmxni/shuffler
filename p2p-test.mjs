@@ -43,16 +43,33 @@ await add(B, 'Tacos')
 console.log('A got a folded slip from B:', await until(A, async () => (await listText(A)).length === 3, 10000), await listText(A))
 console.log('B bowl shows no A text:', await B.$$eval('#bowl .slip', els => els.every(e => !/Pizza|Sushi/.test(e.textContent))))
 
+// ---- ready check ----
+console.log('A draw locked while Ben is writing:', await until(A, async () => await A.$eval('#draw', e => e.disabled && /Waiting for Ben/.test(e.textContent)), 5000), '|', await A.$eval('#draw', e => e.textContent))
+console.log('A sees Ben still writing:', await A.$eval('#people', e => /Ben.*still writing/.test(e.textContent)))
+await B.click('#ready')
+console.log('A draw unlocked once Ben is done:', await until(A, async () => await A.$eval('#draw', e => !e.disabled), 5000), '|', await A.$eval('#people', e => e.textContent))
+
 await A.click('#draw')
 await new Promise(r => setTimeout(r, 2500))
 const wA = await A.$eval('#winnerText', e => e.textContent)
 const wB = await B.$eval('#winnerText', e => e.textContent)
 const whoB = await B.$eval('#who', e => e.textContent)
 console.log('draw A:', JSON.stringify(wA), 'B:', JSON.stringify(wB), 'same:', wA === wB && !!wA, '| B says:', whoB)
-console.log('B winner slip unfolded with text:', await B.$eval('#bowl .slip.winner', e => !e.classList.contains('folded') && e.textContent) === wA, '| highlighted:', await B.$eval('#bowl', e => e.classList.contains('revealed') && !!e.querySelector('.slip.winner')))
+console.log('B winner slip unfolded with text:', await B.$eval('#bowl .slip.winner', e => !e.classList.contains('folded') && e.textContent) === wA)
 
-if (await B.$eval('#result', e => e.classList.contains('show'))) await B.click('#takeOut'); else console.log('skip takeOut: no result on B')
-console.log('A down to 2 slips after B removed winner:', await until(A, async () => (await listText(A)).length === 2, 10000), await listText(A))
+// ---- a slip added after the draw clears the result everywhere ----
+await add(B, 'Late one')
+console.log('A result cleared after Ben added a slip:', await until(A, async () => !(await A.$eval('#result', e => e.classList.contains('show'))), 5000))
+console.log('A got the explanation:', await A.$eval('#toast', e => e.textContent), '| A locked again:', await A.$eval('#draw', e => e.disabled))
+
+// ---- second round: Ben done, A draws, Ben takes the winner out ----
+await B.click('#ready')
+await until(A, async () => await A.$eval('#draw', e => !e.disabled), 5000)
+await A.click('#draw')
+await new Promise(r => setTimeout(r, 2500))
+const before = (await listText(A)).length
+await B.click('#takeOut')
+console.log('A lost one slip after B removed the winner:', await until(A, async () => (await listText(A)).length === before - 1, 10000), await listText(A))
 console.log('A result hidden:', await until(A, async () => !(await A.$eval('#result', e => e.classList.contains('show'))), 5000))
 
 await browser.close()
