@@ -148,7 +148,7 @@
   }
   .list li.folded span:first-child { font-style: italic; color: var(--muted); }
   .list li.folded { padding-right: 12px; }
-  .slip.dropping { animation: drop 1s both; z-index: 3; }
+  .slip.dropping { animation: dropFolded 1s both; z-index: 3; }
   @keyframes drop {
     0%   { transform: translateY(var(--fall, -400px)) rotate(calc(var(--r) - 50deg)) scale(1.12); opacity: 0; animation-timing-function: cubic-bezier(.5, 0, .9, .6); }
     8%   { opacity: 1; animation-timing-function: cubic-bezier(.5, 0, .9, .6); }
@@ -189,14 +189,30 @@
   }
   .bowl.revealed .slip { opacity: .25; }
   .bowl.revealed .slip.winner {
-    opacity: 1; left: 50%; top: 50%; max-width: 90%; font-size: 34px; padding: 16px 26px; z-index: 5;
-    transform: translate(-50%, -50%) rotate(-2deg) scale(1.08); box-shadow: 0 14px 40px var(--paper-shadow);
-    white-space: normal; text-align: center; background: var(--paper);
-    clip-path: polygon(0 2%, 2% 0, 98% 1%, 100% 4%, 99% 97%, 97% 100%, 2% 99%, 0 95%);
+    opacity: 1; left: 50%; top: 50%; max-width: 90%; z-index: 5;
+    transform: translate(-50%, -50%) rotate(-2deg) scale(1.08);
+    white-space: normal; text-align: center;
+    animation: open .6s .55s ease-out both;
+    transition: left .5s, top .5s, transform .5s cubic-bezier(.2,.8,.3,1.2), opacity .4s;
   }
-  .bowl.revealed .slip.winner::after { height: 0; opacity: 0; transform: rotateX(70deg); }
-  .bowl.revealed .slip.winner::before { opacity: .35; }
-  .bowl.revealed .slip.winner .t { white-space: normal; }
+  @keyframes open {
+    from { font-size: 19px; padding: 7px 14px 17px; background: linear-gradient(180deg, #e2dac6, #cfc5ad); box-shadow: 0 3px 6px var(--paper-shadow); }
+    to   { font-size: 34px; padding: 16px 26px; background: var(--paper); box-shadow: 0 14px 40px var(--paper-shadow); }
+  }
+  .bowl.revealed .slip.winner::after {
+    animation: unfold .8s .5s cubic-bezier(.4, 0, .3, 1) both;
+    transition: none;
+  }
+  @keyframes unfold {
+    0%   { transform: perspective(240px) rotateX(0deg); opacity: 1; }
+    60%  { opacity: 1; }
+    100% { transform: perspective(240px) rotateX(-178deg); opacity: 0; }
+  }
+  .bowl.revealed .slip.winner::before { animation: fadeCrease .4s .7s both; }
+  @keyframes fadeCrease { to { opacity: .3; } }
+  .bowl.revealed .slip.winner .t { white-space: normal; animation: appear .45s 1.05s ease-out both; }
+  @keyframes appear { from { opacity: 0; transform: translateY(6px) scale(.96); } to { opacity: 1; transform: none; } }
+  .slip.folded.mine .t { color: #6f6758; }
 
   .result { display: none; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
     margin: 14px 0 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
@@ -285,7 +301,7 @@
   <footer>
     <span>You're in as <b id="me"></b></span>
     <button class="small" id="leave">Leave the bowl</button>
-    <span id="hint">Everyone joins directly, browser to browser. Other people's slips stay folded until one is drawn. Leave the bowl to switch rooms.</span>
+    <span id="hint">Everyone joins directly, browser to browser. Every slip stays folded until one is drawn. Leave the bowl to switch rooms.</span>
   </footer>
 </main>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
@@ -546,9 +562,10 @@
       }
       const mine = s.owner === myId
       const drawn = state.draw && !state.draw.cleared && state.draw.winner === s.id && revealed === state.draw.id
-      el.classList.toggle('folded', !mine && !drawn)
-      el.title = mine ? `${s.text} — yours` : `${s.by}'s slip, folded`
-      el.querySelector('.t').textContent = mine || drawn ? s.text : s.by
+      el.classList.toggle('folded', !drawn)
+      el.classList.toggle('mine', mine)
+      el.title = drawn ? s.text : mine ? 'Your slip, folded' : `${s.by}'s slip, folded`
+      el.querySelector('.t').textContent = drawn ? s.text : mine ? 'you' : s.by
     }
     for (const el of bowl.querySelectorAll('.slip')) if (!seen.has(el.dataset.id)) el.remove()
     layout(mixSeed ? [...slips].sort((a, b) => hash(mixSeed + a.id) - hash(mixSeed + b.id)) : slips)
