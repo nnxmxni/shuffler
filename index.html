@@ -63,6 +63,8 @@
   .lobby .invite { margin: -4px 0 0; font-size: 14px; color: var(--muted); }
   .lobby .invite code { font: 600 14px/1 ui-monospace, Menlo, monospace; letter-spacing: 2px; color: var(--ink); }
   .lobby button.primary { padding: 12px; font-size: 16px; }
+  .lobby button.ghost { background: transparent; border-color: transparent; color: var(--muted); justify-self: center; margin-top: -6px; }
+  .lobby button.ghost:hover { color: var(--ink); background: var(--bg); }
   .people { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 14px 0 0; font-size: 14px; color: var(--muted); }
   .people .tag { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: var(--card); border: 1px solid var(--line); color: var(--ink); }
   .people .tag.me { font-weight: 600; }
@@ -198,6 +200,7 @@
     </label>
     <p class="invite" id="invite" hidden>You've been invited to room <code id="inviteCode"></code>.</p>
     <button class="primary" type="submit" id="enter">Enter the room</button>
+    <button type="button" class="small ghost" id="newBowl">Start a new bowl instead</button>
   </form>
 </section>
 <main id="main" hidden>
@@ -607,18 +610,19 @@
     lobby.hidden = false
     ;(name ? $('lobbyCode') : $('lobbyName')).focus()
   }
-  $('lobbyForm').addEventListener('submit', e => {
-    e.preventDefault()
+  function enter(code) {
     const n = $('lobbyName').value.trim()
-    if (!n) { $('lobbyName').focus(); return }
+    if (!n) { $('lobbyName').focus(); $('lobbyName').reportValidity && $('lobbyName').reportValidity(); return }
     name = n
     store.set('shuffler:name', name)
     names[selfId] = name
     $('me').textContent = name
     lobby.hidden = true
     main.hidden = false
-    connect(cleanCode($('lobbyCode').value) || randomCode())
-  })
+    connect(code)
+  }
+  $('lobbyForm').addEventListener('submit', e => { e.preventDefault(); enter(cleanCode($('lobbyCode').value) || randomCode()) })
+  $('newBowl').addEventListener('click', () => { const c = randomCode(); enter(c); if (!lobby.hidden) return; toast('New bowl opened. Room code ' + c) })
   $('leave').addEventListener('click', () => {
     if (room) { try { room.leave() } catch {} }
     room = null; acts = null
