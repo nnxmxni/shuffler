@@ -181,7 +181,7 @@
     100% { transform: translate(0, 0) rotate(0); }
   }
   /* slips lag behind the bowl and get thrown about; each has its own throw (--tx/--ty) and phase (--d) */
-  .bowl.shuffling .slip { animation: tumble .32s ease-in-out infinite alternate; animation-delay: var(--d); transition: none; }
+  .bowl.shuffling .slip { animation: tumble .32s ease-in-out infinite alternate; animation-delay: var(--d); transition: left .24s ease-in-out, top .24s ease-in-out; }
   @keyframes tumble {
     0%   { transform: translate(calc(var(--tx) * -1), calc(var(--ty) * .6)) rotate(calc(var(--r) - 40deg)); }
     50%  { transform: translate(calc(var(--tx) * .3), calc(var(--ty) * -1)) rotate(calc(var(--r) + 20deg)); }
@@ -212,7 +212,7 @@
   @keyframes fadeCrease { to { opacity: .3; } }
   .bowl.revealed .slip.winner .t { white-space: normal; animation: appear .45s 1.05s ease-out both; }
   @keyframes appear { from { opacity: 0; transform: translateY(6px) scale(.96); } to { opacity: 1; transform: none; } }
-  .slip.folded.mine .t { color: #6f6758; }
+  .slip.folded .t { min-height: 1.2em; min-width: 44px; }
 
   .result { display: none; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
     margin: 14px 0 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
@@ -565,7 +565,7 @@
       el.classList.toggle('folded', !drawn)
       el.classList.toggle('mine', mine)
       el.title = drawn ? s.text : mine ? 'Your slip, folded' : `${s.by}'s slip, folded`
-      el.querySelector('.t').textContent = drawn ? s.text : mine ? 'you' : s.by
+      el.querySelector('.t').textContent = drawn ? s.text : mine ? '' : s.by
     }
     for (const el of bowl.querySelectorAll('.slip')) if (!seen.has(el.dataset.id)) el.remove()
     layout(mixSeed ? [...slips].sort((a, b) => hash(mixSeed + a.id) - hash(mixSeed + b.id)) : slips)
@@ -643,7 +643,20 @@
     bowl.classList.add('shuffling')
     try { navigator.vibrate && navigator.vibrate([70, 50, 70, 50, 60, 60, 50, 80, 40]) } catch {}
     renderControls()
+    // throw the slips to new spots every quarter second while the bowl shakes
+    const W = bowl.clientWidth, H = bowl.clientHeight
+    const toss = () => {
+      for (const el of bowl.querySelectorAll('.slip')) {
+        const w = el.offsetWidth || 80, h = el.offsetHeight || 36
+        const x = W * (.07 + Math.random() * .86) - w / 2, y = H * (.14 + Math.random() * .72) - h / 2
+        el.style.left = Math.round(Math.max(4, Math.min(W - w - 4, x))) + 'px'
+        el.style.top = Math.round(Math.max(4, Math.min(H - h - 4, y))) + 'px'
+      }
+    }
+    toss()
+    const tossing = setInterval(toss, 240)
     setTimeout(() => {
+      clearInterval(tossing)
       if (state.draw !== d) return
       bowl.classList.remove('shuffling')
       try { navigator.vibrate && navigator.vibrate([30, 40, 70]) } catch {}
