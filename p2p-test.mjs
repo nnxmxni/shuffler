@@ -39,6 +39,8 @@ const synced = await until(B, async () => (await bowlCount(B)) === 2)
 console.log('B sees two folded slips in the bowl and nothing in its list:', synced && (await listText(B)).length === 0, `(${((Date.now() - t0) / 1000).toFixed(1)}s)`, await listText(B))
 console.log('A header:', await A.$eval('#peers', e => e.textContent), '| B header:', await B.$eval('#peers', e => e.textContent))
 console.log('A sees Ben in the room:', await until(A, async () => /Ben/.test(await A.$eval('#people', e => e.textContent)), 5000), '|', await A.$eval('#people', e => e.textContent))
+console.log('A got a join notice:', await A.$eval('#toast', e => e.classList.contains('show') && /Ben joined the bowl/.test(e.textContent)), '|', await A.$eval('#toast', e => e.textContent))
+console.log('Ben\'s chip is highlighted as new:', await A.$eval('#people .tag.new', e => /Ben/.test(e.textContent)).catch(() => false))
 
 await add(B, 'Tacos')
 console.log('A got a folded slip from B in the bowl, list still only its own:', await until(A, async () => (await bowlCount(A)) === 3, 10000), await listText(A))
