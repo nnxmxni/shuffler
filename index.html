@@ -458,7 +458,7 @@
     acts.open.onMessage = list => acceptOpens(list)
     acts.state.onMessage = remote => { merge(remote); save(); render(); maybeAnimate() }
     acts.add.onMessage = (s, { peerId }) => { if (!state.removed.has(s.id)) state.slips.set(s.id, s); readyMap[peerId] = false; shaken = false; save(); render() }
-    acts.remove.onMessage = ids => { for (const id of ids) { state.removed.add(id); state.slips.delete(id) } save(); render() }
+    acts.remove.onMessage = ids => { for (const id of ids) { state.removed.add(id); state.slips.delete(id) } shaken = false; save(); render() }
     acts.draw.onMessage = d => {
       if (state.draw && d.t <= state.draw.t) return
       state.draw = d; save(); offerSecrets(d); render(); maybeAnimate()
@@ -499,14 +499,15 @@
     const others = peerIds()
     const waiting = others.filter(id => !readyMap[id]).map(id => names[id] || 'someone')
     const shaking = bowl.classList.contains('shuffling')
-    canPick = state.slips.size >= 1 && waiting.length === 0 && !shaking
+    const everyoneDone = state.slips.size >= 1 && waiting.length === 0 && !shaking
+    canPick = everyoneDone && shaken
     $('draw').disabled = state.slips.size < 1 || shaking
     $('draw').textContent = shaking ? 'Shaking…' : 'Shuffle the bowl'
-    $('revealAll').disabled = !canPick
+    $('revealAll').disabled = !everyoneDone
     bowl.classList.toggle('pickable', canPick && !resultShowing())
     const tip = !state.slips.size ? '' : shaking ? 'Shaking the bowl…'
       : waiting.length ? `Waiting for ${waiting.join(', ')} to finish writing before anyone draws`
-      : resultShowing() ? '' : shaken ? 'Now reach in and tap a slip to draw it' : 'Shake the bowl, then tap a slip to draw it'
+      : resultShowing() ? '' : shaken ? 'Now reach in and tap a slip to draw it' : 'Shake the bowl first, then tap a slip to draw it'
     $('tip').textContent = tip
     $('tip').classList.toggle('go', !!(canPick && !resultShowing()))
     $('ready').hidden = others.length === 0
@@ -574,6 +575,7 @@
 
   function remove(ids) {
     for (const id of ids) { state.removed.add(id); state.slips.delete(id) }
+    shaken = false
     send('remove', ids)
     save(); render()
   }
@@ -612,7 +614,7 @@
     if (bowl.classList.contains('shuffling')) return
     if (!canPick) {
       const waiting = peerIds().filter(id => !readyMap[id]).map(id => names[id] || 'someone')
-      toast(waiting.length ? `Waiting for ${waiting.join(', ')} to finish writing.` : 'Nothing to draw yet.')
+      toast(waiting.length ? `Waiting for ${waiting.join(', ')} to finish writing.` : !shaken ? 'Shake the bowl first.' : 'Nothing to draw yet.')
       return
     }
     if (!openable(s)) { toast(`${s.by} isn't here to open that one. Try another.`); return }

@@ -77,7 +77,11 @@ console.log('A got the explanation:', await A.$eval('#toast', e => e.textContent
 
 // ---- second round: Ben done, A draws, Ben takes the winner out ----
 await B.click('#ready')
-await until(A, async () => await A.$eval('#tip', e => /tap a slip/.test(e.textContent)), 5000)
+await until(A, async () => await A.$eval('#tip', e => /Shake the bowl first/.test(e.textContent)), 5000)
+await A.click('#bowl .slip.folded')
+await new Promise(r => setTimeout(r, 800))
+console.log('Tapping before a shake does nothing:', !(await A.$eval('#result', e => e.classList.contains('show'))), '|', await A.$eval('#toast', e => e.textContent))
+await A.click('#draw'); await new Promise(r => setTimeout(r, 2300))
 await A.click('#bowl .slip.folded')
 await new Promise(r => setTimeout(r, 2000))
 const before = await bowlCount(A)
