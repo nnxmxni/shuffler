@@ -84,7 +84,9 @@
   h1 small { font: 500 13px/1 system-ui, sans-serif; color: var(--muted); margin-left: 8px; letter-spacing: 0; }
 
   .room { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--muted); }
-  .room .chip { display: inline-flex; align-items: center; gap: 6px; background: var(--card); border: 1px solid var(--line); padding: 5px 6px 5px 10px; border-radius: 8px; }
+  .room .chip { display: inline-flex; align-items: center; gap: 6px; background: var(--card); border: 1px solid var(--line); padding: 5px 8px 5px 10px; border-radius: 8px; font-size: 14px; color: var(--muted); cursor: pointer; }
+  .room .chip:hover { background: var(--bowl); }
+  .room .chip:active { transform: translateY(1px); }
   .room code { font: 700 15px/1 ui-monospace, Menlo, monospace; color: var(--ink); letter-spacing: 2px; }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: #c9b36b; display: inline-block; }
   .dot.on { background: #4caf6f; }
@@ -276,7 +278,7 @@
     <h1>Paper Shuffler <small id="peers"></small></h1>
     <div class="room">
       <span class="dot" id="dot"></span><span id="signal">connecting…</span>
-      <span class="chip">Room <code id="code"></code></span>
+      <button class="chip" id="codeChip" title="Tap to copy the room code">Room <code id="code"></code></button>
       <button class="small primary" id="copy">Invite</button>
     </div>
   </header>
@@ -488,11 +490,9 @@
     const tag = (label, ok, me) => ok
       ? `<span class="tag ok${me ? ' me' : ''}" title="Done adding">${label} done</span>`
       : `<span class="tag wait${me ? ' me' : ''}" title="Still writing"><b>${label}</b> still writing</span>`
-    if (!others.length) {
-      $('people').innerHTML = `<span class="lead">Nobody else is here yet.</span><button class="small" data-invite>Share room code ${esc(roomCode)}</button>`
-      return
-    }
-    $('people').innerHTML = `<span class="lead">In the bowl:</span>` + tag('you', myReady, true) + others.map(id => tag(esc(names[id] || 'someone'), readyMap[id])).join('')
+    $('people').innerHTML = `<span class="lead">In the bowl:</span>` + tag('you', myReady, true)
+      + others.map(id => tag(esc(names[id] || 'someone'), readyMap[id])).join('')
+      + (others.length ? '' : `<span class="lead">· waiting for others to join</span>`)
   }
   function renderControls() {
     renderPeople()
@@ -541,7 +541,10 @@
     catch { toast(`The room code is ${roomCode}. Link: ${link}`) }
   }
   $('copy').addEventListener('click', invite)
-  $('people').addEventListener('click', e => { if (e.target.closest('[data-invite]')) invite() })
+  $('codeChip').addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(roomCode); toast(`Room code ${roomCode} copied`) }
+    catch { toast(`Room code: ${roomCode}`) }
+  })
   window.addEventListener('hashchange', () => {
     const c = cleanCode(location.hash.slice(1))
     if (!c) return
