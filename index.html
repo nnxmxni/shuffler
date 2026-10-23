@@ -65,6 +65,10 @@
   .lobby button.primary { padding: 12px; font-size: 16px; }
   .lobby button.ghost { background: transparent; border-color: transparent; color: var(--muted); justify-self: center; margin-top: -6px; }
   .lobby button.ghost:hover { color: var(--ink); background: var(--bg); }
+  .tip { margin: 14px 0 0; font: 500 18px/1.3 Caveat, cursive; color: var(--muted); text-align: center; }
+  .tip.go { color: var(--ink); }
+  .bowl.pickable .slip.folded { cursor: pointer; }
+  .bowl.pickable .slip.folded:hover { transform: rotate(var(--r)) translateY(-4px) scale(1.06); box-shadow: 0 8px 16px var(--paper-shadow); }
   .people { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 14px 0 0; font-size: 14px; color: var(--muted); }
   .people .tag { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: var(--card); border: 1px solid var(--line); color: var(--ink); }
   .people .tag.me { font-weight: 600; }
@@ -294,11 +298,12 @@
     </div>
   </div>
 
+  <p class="tip" id="tip" aria-live="polite"></p>
   <div class="people" id="people" aria-live="polite"></div>
 
   <div class="actions">
     <button id="ready" hidden>I'm done adding</button>
-    <button class="primary" id="draw">Shuffle &amp; draw one</button>
+    <button class="primary" id="draw">Shuffle the bowl</button>
     <button id="revealAll" title="Unfold every slip in the bowl">Reveal all</button>
     <span class="spacer"></span>
     <button id="clear">Empty the bowl</button>
@@ -309,7 +314,7 @@
   <footer>
     <span>You're in as <b id="me"></b></span>
     <button class="small" id="leave">Leave the bowl</button>
-    <span id="hint">Everyone joins directly, browser to browser. Every slip stays folded until one is drawn. Leave the bowl to switch rooms.</span>
+    <span id="hint">Everyone joins directly, browser to browser. Shake the bowl, then tap a slip to draw it. Leave the bowl to switch rooms.</span>
   </footer>
 </main>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
@@ -343,6 +348,7 @@
   let mixSeed = ''     // set by each shuffle so the slips settle into new spots afterwards
   const readyMap = {}   // peerId -> true once that person says they're done adding
   let myReady = false
+  let canPick = false, shaken = false   // shaken: the bowl has been shuffled since the last change
   let roomCode = '', room = null, storeKey = ''
   let animated = null, revealed = null
   let acts = null
@@ -426,6 +432,7 @@
     verified.clear()
     myReady = false
     mixSeed = ''
+    shaken = false
     animated = revealed = null
     bowlReady = false
     bowl.classList.remove('revealed', 'shuffling')
@@ -450,7 +457,7 @@
     }
     acts.open.onMessage = list => acceptOpens(list)
     acts.state.onMessage = remote => { merge(remote); save(); render(); maybeAnimate() }
-    acts.add.onMessage = (s, { peerId }) => { if (!state.removed.has(s.id)) state.slips.set(s.id, s); readyMap[peerId] = false; save(); render() }
+    acts.add.onMessage = (s, { peerId }) => { if (!state.removed.has(s.id)) state.slips.set(s.id, s); readyMap[peerId] = false; shaken = false; save(); render() }
     acts.remove.onMessage = ids => { for (const id of ids) { state.removed.add(id); state.slips.delete(id) } save(); render() }
     acts.draw.onMessage = d => {
       if (state.draw && d.t <= state.draw.t) return
@@ -462,8 +469,9 @@
     render()
     updatePeers()
     // A draw that happened before this page loaded just shows as a result, not an animation.
-    if (state.draw && (state.draw.winner || state.draw.revealAll) && !state.draw.cleared) {
+    if (state.draw && (state.draw.winner || state.draw.revealAll || state.draw.shake) && !state.draw.cleared) {
       animated = revealed = state.draw.id
+      if (state.draw.shake) { mixSeed = state.draw.id; shaken = true }
       render()
       const el = state.draw.winner && bowl.querySelector(`[data-id="${state.draw.winner}"]`)
       if (el) { el.classList.add('winner'); bowl.classList.add('revealed') }
@@ -490,10 +498,17 @@
     renderPeople()
     const others = peerIds()
     const waiting = others.filter(id => !readyMap[id]).map(id => names[id] || 'someone')
-    const canDraw = state.slips.size >= 1 && waiting.length === 0
-    $('draw').disabled = !canDraw || bowl.classList.contains('shuffling')
-    $('revealAll').disabled = $('draw').disabled
-    $('draw').textContent = bowl.classList.contains('shuffling') ? 'Shaking the bowl…' : state.slips.size && waiting.length ? `Waiting for ${waiting.join(', ')}…` : 'Shuffle & draw one'
+    const shaking = bowl.classList.contains('shuffling')
+    canPick = state.slips.size >= 1 && waiting.length === 0 && !shaking
+    $('draw').disabled = state.slips.size < 1 || shaking
+    $('draw').textContent = shaking ? 'Shaking…' : 'Shuffle the bowl'
+    $('revealAll').disabled = !canPick
+    bowl.classList.toggle('pickable', canPick && !resultShowing())
+    const tip = !state.slips.size ? '' : shaking ? 'Shaking the bowl…'
+      : waiting.length ? `Waiting for ${waiting.join(', ')} to finish writing before anyone draws`
+      : resultShowing() ? '' : shaken ? 'Now reach in and tap a slip to draw it' : 'Shake the bowl, then tap a slip to draw it'
+    $('tip').textContent = tip
+    $('tip').classList.toggle('go', !!(canPick && !resultShowing()))
     $('ready').hidden = others.length === 0
     $('ready').textContent = myReady ? '✓ Done adding' : "I'm done adding"
     $('ready').title = myReady ? 'Tap to say you want to add more' : 'Tell the others you have nothing more to add'
@@ -547,6 +562,7 @@
     saveSecrets()
     state.slips.set(id, slip)
     send('add', slip)
+    shaken = false
     save(); render()
     if (myReady) setReady(false)
     if (resultShowing()) {
@@ -583,17 +599,25 @@
   const openable = s => s.text != null || presentOwners().has(s.owner)
 
   $('draw').addEventListener('click', () => {
-    const ids = [...state.slips.values()].filter(openable).map(s => s.id)
-    if ($('draw').disabled) return
-    if (ids.length < 1) { toast('Nobody here owns a slip that can be opened.'); return }
-    if (!myReady && peerIds().length) setReady(true)
-    // Fisher–Yates with a cryptographic source: the digital shake of the bowl
-    for (let i = ids.length - 1; i > 0; i--) {
-      const j = crypto.getRandomValues(new Uint32Array(1))[0] % (i + 1)
-      ;[ids[i], ids[j]] = [ids[j], ids[i]]
+    if (state.slips.size < 1 || $('draw').disabled) return
+    setDraw({ id: uid(), shake: true, by: myName(), t: Date.now() })
+  })
+
+  $('bowl').addEventListener('click', e => {
+    const el = e.target.closest('.slip')
+    if (!el || !el.classList.contains('folded')) return
+    const s = state.slips.get(el.dataset.id)
+    if (!s) return
+    if (resultShowing()) { toast('Put everything back first, then draw again.'); return }
+    if (bowl.classList.contains('shuffling')) return
+    if (!canPick) {
+      const waiting = peerIds().filter(id => !readyMap[id]).map(id => names[id] || 'someone')
+      toast(waiting.length ? `Waiting for ${waiting.join(', ')} to finish writing.` : 'Nothing to draw yet.')
+      return
     }
-    const winner = ids[0]
-    setDraw({ id: uid(), winner, by: myName(), t: Date.now() })
+    if (!openable(s)) { toast(`${s.by} isn't here to open that one. Try another.`); return }
+    if (!myReady && peerIds().length) setReady(true)
+    setDraw({ id: uid(), winner: s.id, picked: true, by: myName(), t: Date.now() })
   })
 
   $('revealAll').addEventListener('click', () => {
@@ -659,6 +683,7 @@
 
     const d = state.draw
     const showing = d && (d.winner || d.revealAll) && !d.cleared && revealed === d.id
+    if (d && d.shake && revealed === d.id) shaken = true
     $('result').classList.toggle('show', !!showing)
     bowl.classList.toggle('open', !!(showing && d.revealAll))
     putBackLabel()
@@ -669,7 +694,8 @@
       $('takeOut').style.display = 'none'
     } else if (showing) {
       const w = state.slips.get(d.winner), wt = w ? textOf(w) : null
-      $('who').textContent = wt != null ? `${d.by} shuffled and drew` : w ? `${d.by} shuffled and drew ${w.by}'s slip` : `${d.by} shuffled and drew`
+      const verb = d.picked ? 'reached in and drew' : 'shuffled and drew'
+      $('who').textContent = wt != null ? `${d.by} ${verb}` : w ? `${d.by} ${verb} ${w.by}'s slip` : `${d.by} ${verb}`
       $('winnerText').textContent = wt != null ? wt : w ? (openable(w) ? 'Opening…' : `${w.by} isn't here to open it`) : '(that slip was taken out)'
       $('takeOut').style.display = state.slips.has(d.winner) ? '' : 'none'
     }
@@ -732,10 +758,21 @@
   // ---------- the shuffle animation, played identically on every peer ----------
   function maybeAnimate() {
     const d = state.draw
-    if (!d || d.cleared || !(d.winner || d.revealAll) || animated === d.id) return
+    if (!d || d.cleared || !(d.winner || d.revealAll || d.shake) || animated === d.id) return
     animated = d.id
     bowl.classList.remove('revealed')
     bowl.querySelectorAll('.winner').forEach(e => e.classList.remove('winner'))
+    if (d.picked) {
+      // reaching in: the tapped slip just lifts out and opens
+      revealed = d.id
+      render()
+      const el = bowl.querySelector(`[data-id="${d.winner}"]`)
+      if (el) { el.classList.add('winner'); bowl.classList.add('revealed') }
+      layout(laidOut)
+      try { navigator.vibrate && navigator.vibrate([30, 40, 70]) } catch {}
+      renderControls()
+      return
+    }
     bowl.classList.add('shuffling')
     try { navigator.vibrate && navigator.vibrate([70, 50, 70, 50, 60, 60, 50, 80, 40]) } catch {}
     renderControls()
@@ -758,6 +795,7 @@
       try { navigator.vibrate && navigator.vibrate([30, 40, 70]) } catch {}
       mixSeed = d.id
       revealed = d.id
+      if (d.shake) shaken = true
       render()
       const el = d.winner && bowl.querySelector(`[data-id="${d.winner}"]`)
       if (el) { el.classList.add('winner'); bowl.classList.add('revealed') }

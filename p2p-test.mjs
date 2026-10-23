@@ -48,13 +48,20 @@ console.log('B holds no text at all for A\'s slips (only fingerprints):', held.f
 console.log('B page source holds no A text anywhere:', await B.evaluate(() => !/Pizza|Sushi/.test(document.documentElement.outerHTML + JSON.stringify(Object.entries(localStorage)))))
 
 // ---- ready check ----
-console.log('A draw locked while Ben is writing:', await until(A, async () => await A.$eval('#draw', e => e.disabled && /Waiting for Ben/.test(e.textContent)), 5000), '|', await A.$eval('#draw', e => e.textContent))
+console.log('A told to wait while Ben is writing:', await until(A, async () => await A.$eval('#tip', e => /Waiting for Ben/.test(e.textContent)), 5000), '|', await A.$eval('#tip', e => e.textContent))
+await A.click('#bowl .slip')
+await new Promise(r => setTimeout(r, 800))
+console.log('Tapping a slip does nothing while locked:', !(await A.$eval('#result', e => e.classList.contains('show'))))
 console.log('A sees Ben still writing:', await A.$eval('#people', e => /Ben.*still writing/.test(e.textContent)))
 await B.click('#ready')
-console.log('A draw unlocked once Ben is done:', await until(A, async () => await A.$eval('#draw', e => !e.disabled), 5000), '|', await A.$eval('#people', e => e.textContent))
+console.log('A may draw once Ben is done:', await until(A, async () => await A.$eval('#tip', e => /tap a slip/.test(e.textContent)), 5000), '|', await A.$eval('#people', e => e.textContent))
 
-await A.click('#draw')
-await new Promise(r => setTimeout(r, 2500))
+await A.click('#draw')   // shuffle only
+await new Promise(r => setTimeout(r, 2300))
+console.log('Shuffle alone shows no result:', !(await A.$eval('#result', e => e.classList.contains('show'))), '|', await A.$eval('#tip', e => e.textContent))
+console.log('B saw the shake too (bowl mixed, no result):', !(await B.$eval('#result', e => e.classList.contains('show'))))
+await A.click('#bowl .slip.folded')   // reach in and draw
+await new Promise(r => setTimeout(r, 2000))
 const wA = await A.$eval('#winnerText', e => e.textContent)
 const wB = await B.$eval('#winnerText', e => e.textContent)
 const whoB = await B.$eval('#who', e => e.textContent)
@@ -66,13 +73,13 @@ console.log('B now holds text only for the drawn slip:', heldAfter.filter(s => !
 // ---- a slip added after the draw clears the result everywhere ----
 await add(B, 'Late one')
 console.log('A result cleared after Ben added a slip:', await until(A, async () => !(await A.$eval('#result', e => e.classList.contains('show'))), 5000))
-console.log('A got the explanation:', await A.$eval('#toast', e => e.textContent), '| A locked again:', await A.$eval('#draw', e => e.disabled))
+console.log('A got the explanation:', await A.$eval('#toast', e => e.textContent), '| A locked again:', await until(A, async () => await A.$eval('#tip', e => /Waiting for Ben/.test(e.textContent)), 5000))
 
 // ---- second round: Ben done, A draws, Ben takes the winner out ----
 await B.click('#ready')
-await until(A, async () => await A.$eval('#draw', e => !e.disabled), 5000)
-await A.click('#draw')
-await new Promise(r => setTimeout(r, 2500))
+await until(A, async () => await A.$eval('#tip', e => /tap a slip/.test(e.textContent)), 5000)
+await A.click('#bowl .slip.folded')
+await new Promise(r => setTimeout(r, 2000))
 const before = await bowlCount(A)
 await B.click('#takeOut')
 console.log('A lost one slip after B removed the winner:', await until(A, async () => (await bowlCount(A)) === before - 1, 10000), await listText(A))
@@ -84,7 +91,7 @@ console.log('A reveal unlocked:', await until(A, async () => await A.$eval('#rev
 await A.click('#revealAll')
 await new Promise(r => setTimeout(r, 3200))
 const openB = await B.$$eval('#bowl .slip', els => ({ all: els.every(e => !e.classList.contains('folded')), texts: els.map(e => e.textContent) }))
-console.log('B sees every slip open after A revealed all:', openB.all && openB.texts.length === 3 && openB.texts.every(x => x && x !== 'opening…') && openB.texts.includes('Pizza'), openB.texts, '|', await B.$eval('#who', e => e.textContent))
+console.log('B sees every slip open after A revealed all:', openB.all && openB.texts.length === 3 && openB.texts.every(x => x && x !== 'opening…'), openB.texts, '|', await B.$eval('#who', e => e.textContent))
 await B.click('#putBack')
 console.log('A folded back after B put them away:', await until(A, async () => await A.$$eval('#bowl .slip', els => els.every(e => e.classList.contains('folded'))), 5000))
 
