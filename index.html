@@ -693,7 +693,7 @@
     if (!s) return
     const r = bowl.getBoundingClientRect()
     drag = { el, id: s.id, sx: e.clientX, sy: e.clientY, ox: e.clientX - r.left - el.offsetLeft, oy: e.clientY - r.top - el.offsetTop, moved: false,
-             lx: e.clientX, ly: e.clientY, lt: performance.now(), vx: 0, vy: 0, tilt: 0, lift: 0, base: parseFloat(el.style.getPropertyValue('--r')) || 0 }
+             lx: e.clientX, ly: e.clientY, lt: performance.now(), vx: 0, vy: 0, tilt: 0, lift: 1.08, base: parseFloat(el.style.getPropertyValue('--r')) || 0 }
     el.setPointerCapture(e.pointerId)
   })
   $('bowl').addEventListener('pointermove', e => {
@@ -701,7 +701,7 @@
     if (!drag.moved && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) < 6) return
     if (!drag.moved) {
       drag.moved = true; drag.el.classList.add('dragging'); bowl.classList.add('dragging'); $('tip').textContent = 'Let go outside the bowl to take it out'
-      drag.el.addEventListener('animationend', () => { if (drag && drag.el) swing() }, { once: true })
+      requestAnimationFrame(swing)
     }
     const now = performance.now(), dt = Math.max(1, now - drag.lt)
     // velocity drives the swing: a quick move tilts the slip into the motion, then it settles
