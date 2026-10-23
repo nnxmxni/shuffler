@@ -211,6 +211,7 @@
   .bowl.revealed .slip.winner .t { white-space: normal; animation: appear .45s 1.05s ease-out both; }
   @keyframes appear { from { opacity: 0; transform: translateY(6px) scale(.96); } to { opacity: 1; transform: none; } }
   .slip.folded .t { min-height: 1.2em; min-width: 44px; }
+  .slip.pending .t { font: 500 12px/1.4 system-ui, sans-serif; color: var(--muted); }
   .bowl.open .slip { animation: openInPlace .5s ease-out both; animation-delay: calc(var(--i, 0) * 80ms); z-index: 2; }
   @keyframes openInPlace {
     from { background: linear-gradient(180deg, #e2dac6, #cfc5ad); }
@@ -346,14 +347,63 @@
   let animated = null, revealed = null
   let acts = null
 
+  // What other peers receive about a slip is {id, by, owner, t, h}: h is SHA-256(salt:text). The text and
+  // salt live only in the owner's browser (secrets) until the slip is drawn or revealed, when the owner
+  // sends them and everyone checks them against h. Once opened, the text is part of the shared record.
+  let secrets = {}           // id -> {text, salt}, your own slips only
+  const peerOwner = {}       // peerId -> owner id, learned from the name message
+  const verified = new Set() // slip ids whose revealed text matched its fingerprint
+  const sha256 = async str => {
+    const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str))
+    return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('')
+  }
+  const randomHex = n => Array.from(crypto.getRandomValues(new Uint8Array(n)), b => b.toString(16).padStart(2, '0')).join('')
+  const textOf = s => s.text != null ? s.text : secrets[s.id] ? secrets[s.id].text : null
+  const saveSecrets = () => store.set('shuffler:secrets:' + roomCode, JSON.stringify(secrets))
+
   const snapshot = () => ({ slips: [...state.slips.values()], removed: [...state.removed], draw: state.draw })
   const save = () => store.set(storeKey, JSON.stringify(snapshot()))
-  const load = () => { try { const saved = JSON.parse(store.get(storeKey) || 'null'); if (saved) merge(saved) } catch {} }
+  const load = () => {
+    try { secrets = JSON.parse(store.get('shuffler:secrets:' + roomCode) || '{}') || {} } catch { secrets = {} }
+    try { const saved = JSON.parse(store.get(storeKey) || 'null'); if (saved) merge(saved) } catch {}
+  }
 
   function merge(remote) {
-    for (const s of remote.slips || []) if (s && s.id && !state.removed.has(s.id) && !state.slips.has(s.id)) state.slips.set(s.id, s)
+    for (const s of remote.slips || []) {
+      if (!s || !s.id || state.removed.has(s.id)) continue
+      const mine = state.slips.get(s.id)
+      if (!mine) state.slips.set(s.id, s)
+      else if (mine.text == null && s.text != null) mine.text = s.text   // a text revealed while we were away
+    }
     for (const id of remote.removed || []) { state.removed.add(id); state.slips.delete(id) }
     if (remote.draw && (!state.draw || remote.draw.t > state.draw.t)) state.draw = remote.draw
+    checkTexts()
+  }
+  // any revealed text that doesn't match its fingerprint is dropped
+  async function checkTexts() {
+    for (const s of [...state.slips.values()]) {
+      if (s.text == null || !s.h || verified.has(s.id) || s.owner === myId) continue
+      const ok = s.salt && await sha256(s.salt + ':' + s.text) === s.h
+      if (ok) verified.add(s.id)
+      else { delete s.text; delete s.salt; render() }
+    }
+  }
+  // after a draw or reveal, hand over the text of your own slips that must open
+  function offerSecrets(d) {
+    if (!d || d.cleared) return
+    const ids = d.revealAll ? [...state.slips.keys()] : d.winner ? [d.winner] : []
+    const opens = ids.filter(id => secrets[id] && state.slips.has(id)).map(id => ({ id, text: secrets[id].text, salt: secrets[id].salt }))
+    for (const o of opens) { const s = state.slips.get(o.id); s.text = o.text; s.salt = o.salt }
+    if (opens.length) { send('open', opens); save() }
+  }
+  async function acceptOpens(list) {
+    for (const o of Array.isArray(list) ? list : []) {
+      const s = state.slips.get(o && o.id)
+      if (!s || s.owner === myId || typeof o.text !== 'string') continue
+      if (s.h && (typeof o.salt !== 'string' || await sha256(o.salt + ':' + o.text) !== s.h)) continue
+      s.text = String(o.text).slice(0, 60); s.salt = o.salt; verified.add(s.id)
+    }
+    save(); render()
   }
 
   // ---------- networking ----------
@@ -372,6 +422,8 @@
     state.slips.clear(); state.removed.clear(); state.draw = null
     for (const k of Object.keys(names)) if (k !== selfId) delete names[k]
     for (const k of Object.keys(readyMap)) delete readyMap[k]
+    for (const k of Object.keys(peerOwner)) delete peerOwner[k]
+    verified.clear()
     myReady = false
     mixSeed = ''
     animated = revealed = null
@@ -386,17 +438,23 @@
       }
     })
     acts = {}
-    for (const n of ['state', 'add', 'remove', 'draw', 'name', 'ready']) acts[n] = room.makeAction(n)
-    room.onPeerJoin = id => { send('name', myName(), id); send('ready', myReady, id); send('state', snapshot(), id); updatePeers(); toast('Someone joined the bowl') }
-    room.onPeerLeave = id => { delete names[id]; delete readyMap[id]; updatePeers() }
+    for (const n of ['state', 'add', 'remove', 'draw', 'name', 'ready', 'open']) acts[n] = room.makeAction(n)
+    room.onPeerJoin = id => { send('name', { name: myName(), uid: myId }, id); send('ready', myReady, id); send('state', snapshot(), id); updatePeers(); toast('Someone joined the bowl') }
+    room.onPeerLeave = id => { delete names[id]; delete readyMap[id]; delete peerOwner[id]; updatePeers(); render() }
     acts.ready.onMessage = (v, { peerId }) => { readyMap[peerId] = !!v; renderControls() }
-    acts.name.onMessage = (n, { peerId }) => { names[peerId] = String(n).slice(0, 20); renderControls() }
+    acts.name.onMessage = (n, { peerId }) => {
+      const info = n && typeof n === 'object' ? n : { name: n }
+      names[peerId] = String(info.name || '').slice(0, 20)
+      if (info.uid) peerOwner[peerId] = String(info.uid)
+      renderControls(); render()
+    }
+    acts.open.onMessage = list => acceptOpens(list)
     acts.state.onMessage = remote => { merge(remote); save(); render(); maybeAnimate() }
     acts.add.onMessage = (s, { peerId }) => { if (!state.removed.has(s.id)) state.slips.set(s.id, s); readyMap[peerId] = false; save(); render() }
     acts.remove.onMessage = ids => { for (const id of ids) { state.removed.add(id); state.slips.delete(id) } save(); render() }
     acts.draw.onMessage = d => {
       if (state.draw && d.t <= state.draw.t) return
-      state.draw = d; save(); render(); maybeAnimate()
+      state.draw = d; save(); offerSecrets(d); render(); maybeAnimate()
       if (d.cleared && d.reason === 'added') toast(d.what === 'reveal' ? `${d.by} added a slip after the reveal, so everything was folded back.` : `${d.by} added a slip after the draw, so the result was cleared. Draw again.`)
     }
 
@@ -478,14 +536,17 @@
   // ---------- slip actions ----------
   const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
 
-  $('form').addEventListener('submit', e => {
+  $('form').addEventListener('submit', async e => {
     e.preventDefault()
     const text = $('text').value.trim()
     if (!text) return
-    const slip = { id: uid(), text, by: myName(), owner: myId, t: Date.now() }
-    state.slips.set(slip.id, slip)
-    send('add', slip)
     $('text').value = ''
+    const id = uid(), salt = randomHex(16)
+    const slip = { id, by: myName(), owner: myId, t: Date.now(), h: await sha256(salt + ':' + text) }
+    secrets[id] = { text, salt }
+    saveSecrets()
+    state.slips.set(id, slip)
+    send('add', slip)
     save(); render()
     if (myReady) setReady(false)
     if (resultShowing()) {
@@ -516,11 +577,15 @@
     setDraw({ id: uid(), cleared: true, t: Date.now() })
   })
 
-  function setDraw(d) { state.draw = d; send('draw', d); save(); render(); maybeAnimate() }
+  function setDraw(d) { state.draw = d; send('draw', d); offerSecrets(d); save(); render(); maybeAnimate() }
+
+  const presentOwners = () => new Set([myId, ...peerIds().map(id => peerOwner[id]).filter(Boolean)])
+  const openable = s => s.text != null || presentOwners().has(s.owner)
 
   $('draw').addEventListener('click', () => {
-    const ids = [...state.slips.keys()]
-    if (ids.length < 1 || $('draw').disabled) return
+    const ids = [...state.slips.values()].filter(openable).map(s => s.id)
+    if ($('draw').disabled) return
+    if (ids.length < 1) { toast('Nobody here owns a slip that can be opened.'); return }
     if (!myReady && peerIds().length) setReady(true)
     // Fisher–Yates with a cryptographic source: the digital shake of the bowl
     for (let i = ids.length - 1; i > 0; i--) {
@@ -528,7 +593,7 @@
       ;[ids[i], ids[j]] = [ids[j], ids[i]]
     }
     const winner = ids[0]
-    setDraw({ id: uid(), winner, text: state.slips.get(winner).text, by: myName(), t: Date.now() })
+    setDraw({ id: uid(), winner, by: myName(), t: Date.now() })
   })
 
   $('revealAll').addEventListener('click', () => {
@@ -583,8 +648,11 @@
       const open = live && state.draw.revealAll
       el.classList.toggle('folded', !drawn && !open)
       el.classList.toggle('mine', mine)
-      el.title = drawn || open ? s.text : 'A folded slip'
-      el.querySelector('.t').textContent = drawn || open ? s.text : ''
+      const text = textOf(s)
+      const away = (drawn || open) && text == null && !openable(s)
+      el.classList.toggle('pending', (drawn || open) && text == null)
+      el.title = drawn || open ? (text != null ? text : away ? `${s.by} isn't here to open it` : `Waiting for ${s.by} to open it`) : 'A folded slip'
+      el.querySelector('.t').textContent = drawn || open ? (text != null ? text : away ? `${s.by} is away` : 'opening…') : ''
     }
     for (const el of bowl.querySelectorAll('.slip')) if (!seen.has(el.dataset.id)) el.remove()
     layout(mixSeed ? [...slips].sort((a, b) => hash(mixSeed + a.id) - hash(mixSeed + b.id)) : slips)
@@ -595,19 +663,21 @@
     bowl.classList.toggle('open', !!(showing && d.revealAll))
     putBackLabel()
     if (showing && d.revealAll) {
+      const known = slips.filter(s => textOf(s) != null).length
       $('who').textContent = `${d.by} tipped the bowl out`
-      $('winnerText').textContent = `All ${slips.length} slip${slips.length === 1 ? '' : 's'} are open`
+      $('winnerText').textContent = known === slips.length ? `All ${slips.length} slip${slips.length === 1 ? '' : 's'} are open` : `${known} of ${slips.length} open, waiting for the rest…`
       $('takeOut').style.display = 'none'
     } else if (showing) {
-      $('who').textContent = `${d.by} shuffled and drew`
-      $('winnerText').textContent = d.text
+      const w = state.slips.get(d.winner), wt = w ? textOf(w) : null
+      $('who').textContent = wt != null ? `${d.by} shuffled and drew` : w ? `${d.by} shuffled and drew ${w.by}'s slip` : `${d.by} shuffled and drew`
+      $('winnerText').textContent = wt != null ? wt : w ? (openable(w) ? 'Opening…' : `${w.by} isn't here to open it`) : '(that slip was taken out)'
       $('takeOut').style.display = state.slips.has(d.winner) ? '' : 'none'
     }
     if (!showing) { bowl.classList.remove('revealed'); bowl.querySelectorAll('.winner').forEach(e => e.classList.remove('winner')); layout(laidOut) }
 
     // only your own slips are listed; everyone else's exist only as folded paper in the bowl
     $('list').innerHTML = slips.filter(s => s.owner === myId).map(s => `
-      <li><span>${esc(s.text)}</span><span class="by">yours</span>
+      <li><span>${esc(textOf(s) ?? '')}</span><span class="by">yours</span>
         <button data-remove="${s.id}" title="Tear it up">✕</button></li>`).join('')
   }
   $('list').addEventListener('click', e => {
@@ -702,6 +772,8 @@
     clearTimeout(toastTimer)
     toastTimer = setTimeout(() => $('toast').classList.remove('show'), 2600)
   }
+
+  window.__slips = () => [...state.slips.values()].map(s => ({ id: s.id, owner: s.owner, hasText: s.text != null, mine: s.owner === myId }))
 
   // ---------- lobby ----------
   const lobby = $('lobby'), main = $('main')
