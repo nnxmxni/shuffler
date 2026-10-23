@@ -501,8 +501,8 @@
     const shaking = bowl.classList.contains('shuffling')
     const everyoneDone = state.slips.size >= 1 && waiting.length === 0 && !shaking
     canPick = everyoneDone && shaken
-    $('draw').disabled = state.slips.size < 1 || shaking
-    $('draw').textContent = shaking ? 'Shaking…' : 'Shuffle the bowl'
+    $('draw').disabled = !everyoneDone
+    $('draw').textContent = shaking ? 'Shaking…' : state.slips.size && waiting.length ? `Waiting for ${waiting.join(', ')}…` : 'Shuffle the bowl'
     $('revealAll').disabled = !everyoneDone
     bowl.classList.toggle('pickable', canPick && !resultShowing())
     const tip = !state.slips.size ? '' : shaking ? 'Shaking the bowl…'

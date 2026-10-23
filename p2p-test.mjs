@@ -52,9 +52,11 @@ console.log('A told to wait while Ben is writing:', await until(A, async () => a
 await A.click('#bowl .slip')
 await new Promise(r => setTimeout(r, 800))
 console.log('Tapping a slip does nothing while locked:', !(await A.$eval('#result', e => e.classList.contains('show'))))
+console.log('Shuffle button disabled while Ben writes:', await A.$eval('#draw', e => e.disabled && /Waiting for Ben/.test(e.textContent)), '|', await A.$eval('#draw', e => e.textContent))
 console.log('A sees Ben still writing:', await A.$eval('#people', e => /Ben.*still writing/.test(e.textContent)))
 await B.click('#ready')
 console.log('A may draw once Ben is done:', await until(A, async () => await A.$eval('#tip', e => /tap a slip/.test(e.textContent)), 5000), '|', await A.$eval('#people', e => e.textContent))
+console.log('Shuffle button enabled again:', await until(A, async () => await A.$eval('#draw', e => !e.disabled), 5000))
 
 await A.click('#draw')   // shuffle only
 await new Promise(r => setTimeout(r, 2300))
