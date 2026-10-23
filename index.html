@@ -350,6 +350,31 @@
 
   const $ = id => document.getElementById(id)
   let toastTimer
+
+  // ---------- haptics ----------
+  // Android and most non-Apple browsers expose navigator.vibrate. iOS Safari does not, but toggling a
+  // native <input type="checkbox" switch> fires a Taptic tick (iOS 18+), so we tap one of those per pulse.
+  const haptic = (() => {
+    let sw = null
+    const canVibrate = typeof navigator.vibrate === 'function'
+    const switchTick = () => {
+      if (!sw) {
+        sw = document.createElement('input'); sw.type = 'checkbox'
+        sw.setAttribute('switch', '')
+        sw.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;pointer-events:none'
+        sw.setAttribute('aria-hidden', 'true'); sw.tabIndex = -1
+        document.body.appendChild(sw)
+      }
+      try { sw.click() } catch {}
+    }
+    return pattern => {
+      const p = Array.isArray(pattern) ? pattern : [pattern]
+      if (canVibrate) { try { if (navigator.vibrate(p)) return } catch {} }
+      // fallback: one tick per "on" segment, spaced like the pattern
+      let t = 0
+      p.forEach((ms, i) => { if (i % 2 === 0) setTimeout(switchTick, t); t += ms })
+    }
+  })()
   const APP_ID = 'paper-shuffler-v1'
   const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
   const randomCode = () => Array.from(crypto.getRandomValues(new Uint8Array(6)), b => ALPHABET[b % ALPHABET.length]).join('')
@@ -493,7 +518,7 @@
       if (info.uid) peerOwner[peerId] = String(info.uid)
       if (wasNew) {
         toast(`👋 ${names[peerId] || 'Someone'} joined the bowl`, 4500)
-        try { navigator.vibrate && navigator.vibrate(40) } catch {}
+        haptic(40)
         justJoined[peerId] = Date.now()
         setTimeout(() => { delete justJoined[peerId]; renderControls() }, 5000)
       }
@@ -545,7 +570,7 @@
     gone.add(id)
     if (announce && who) {
       toast(`👋 ${who} left the bowl`, 4500)
-      try { navigator.vibrate && navigator.vibrate([20, 60, 20]) } catch {}
+      haptic([20, 60, 20])
       justLeft[id] = who
       setTimeout(() => { delete justLeft[id]; renderControls() }, 5000)
     }
@@ -934,12 +959,12 @@
       const el = bowl.querySelector(`[data-id="${d.winner}"]`)
       if (el) { el.classList.add('winner'); bowl.classList.add('revealed') }
       layout(laidOut)
-      try { navigator.vibrate && navigator.vibrate([30, 40, 70]) } catch {}
+      haptic([30, 40, 70])
       renderControls()
       return
     }
     bowl.classList.add('shuffling')
-    try { navigator.vibrate && navigator.vibrate([70, 50, 70, 50, 60, 60, 50, 80, 40]) } catch {}
+    haptic([70, 50, 70, 50, 60, 60, 50, 80, 40])
     renderControls()
     // The slips slosh against the bowl's motion: each toss throws the pile to the side the bowl is
     // swinging away from, with big hops early that die down as the shake settles.
@@ -966,7 +991,7 @@
       clearInterval(tossing)
       if (state.draw !== d) return
       bowl.classList.remove('shuffling')
-      try { navigator.vibrate && navigator.vibrate([30, 40, 70]) } catch {}
+      haptic([30, 40, 70])
       mixSeed = d.id
       revealed = d.id
       if (d.shake) shaken = true
