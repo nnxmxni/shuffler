@@ -70,7 +70,8 @@
   .bowl.pickable .slip.folded { cursor: pointer; }
   .slip.folded { touch-action: none; }
   .bowl.dragging { overflow: visible; }
-  .slip.dragging { transition: none; z-index: 20; cursor: grabbing; transform: rotate(var(--r)) scale(1.08); box-shadow: 0 12px 24px var(--paper-shadow); }
+  .slip.dragging { transition: none; z-index: 20; cursor: grabbing; transform: rotate(var(--r)) scale(1.08); box-shadow: 0 14px 28px var(--paper-shadow); animation: pickup .25s ease-out; }
+  @keyframes pickup { 0% { transform: rotate(var(--r)) scale(1); } 60% { transform: rotate(var(--r)) scale(1.16); } 100% { transform: rotate(var(--r)) scale(1.08); } }
   .slip.dragging.out { box-shadow: 0 12px 24px var(--paper-shadow), 0 0 0 3px var(--accent); }
   .slip.flyaway { transition: transform .35s ease-in, opacity .35s ease-in; transform: rotate(var(--r)) scale(.4); opacity: 0; }
   .bowl.pickable .slip.folded:hover { transform: rotate(var(--r)) translateY(-4px) scale(1.06); box-shadow: 0 8px 16px var(--paper-shadow); }
@@ -691,23 +692,44 @@
     const s = state.slips.get(el.dataset.id)
     if (!s) return
     const r = bowl.getBoundingClientRect()
-    drag = { el, id: s.id, sx: e.clientX, sy: e.clientY, ox: e.clientX - r.left - el.offsetLeft, oy: e.clientY - r.top - el.offsetTop, moved: false }
+    drag = { el, id: s.id, sx: e.clientX, sy: e.clientY, ox: e.clientX - r.left - el.offsetLeft, oy: e.clientY - r.top - el.offsetTop, moved: false,
+             lx: e.clientX, ly: e.clientY, lt: performance.now(), vx: 0, vy: 0, tilt: 0, lift: 0, base: parseFloat(el.style.getPropertyValue('--r')) || 0 }
     el.setPointerCapture(e.pointerId)
   })
   $('bowl').addEventListener('pointermove', e => {
     if (!drag) return
     if (!drag.moved && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) < 6) return
-    if (!drag.moved) { drag.moved = true; drag.el.classList.add('dragging'); bowl.classList.add('dragging'); $('tip').textContent = 'Let go outside the bowl to take it out' }
+    if (!drag.moved) {
+      drag.moved = true; drag.el.classList.add('dragging'); bowl.classList.add('dragging'); $('tip').textContent = 'Let go outside the bowl to take it out'
+      drag.el.addEventListener('animationend', () => { if (drag && drag.el) swing() }, { once: true })
+    }
+    const now = performance.now(), dt = Math.max(1, now - drag.lt)
+    // velocity drives the swing: a quick move tilts the slip into the motion, then it settles
+    drag.vx = drag.vx * .5 + ((e.clientX - drag.lx) / dt) * .5
+    drag.vy = drag.vy * .5 + ((e.clientY - drag.ly) / dt) * .5
+    drag.lx = e.clientX; drag.ly = e.clientY; drag.lt = now
     const r = bowl.getBoundingClientRect()
     drag.el.style.left = Math.round(e.clientX - r.left - drag.ox) + 'px'
     drag.el.style.top = Math.round(e.clientY - r.top - drag.oy) + 'px'
     drag.el.classList.toggle('out', !insideBowl(e.clientX, e.clientY))
   })
+  // runs every frame while a slip is held: eases the tilt toward the current velocity and decays it
+  function swing() {
+    if (!drag || !drag.moved) return
+    const d = drag
+    const target = Math.max(-32, Math.min(32, d.vx * 28)) + Math.max(-8, Math.min(8, d.vy * 6))
+    d.tilt += (target - d.tilt) * .18
+    d.vx *= .9; d.vy *= .9
+    d.lift += (1.08 - d.lift) * .2
+    d.el.style.transform = `rotate(${(d.base + d.tilt).toFixed(2)}deg) scale(${d.lift.toFixed(3)})`
+    requestAnimationFrame(swing)
+  }
   const endDrag = e => {
     if (!drag) return
     const d = drag; drag = null
     if (!d.moved) return
     suppressClick = true
+    d.el.style.transform = ''
     d.el.classList.remove('dragging', 'out')
     bowl.classList.remove('dragging')
     if (!insideBowl(e.clientX, e.clientY)) {
