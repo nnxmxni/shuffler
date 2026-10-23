@@ -73,7 +73,18 @@
   .slip.dragging { transition: none; z-index: 20; cursor: grabbing; transform: rotate(var(--r)) scale(1.08); box-shadow: 0 14px 28px var(--paper-shadow); animation: pickup .25s ease-out; }
   @keyframes pickup { 0% { transform: rotate(var(--r)) scale(1); } 60% { transform: rotate(var(--r)) scale(1.16); } 100% { transform: rotate(var(--r)) scale(1.08); } }
   .slip.dragging.out { box-shadow: 0 12px 24px var(--paper-shadow), 0 0 0 3px var(--accent); }
-  .slip.flyaway { transition: transform .35s ease-in, opacity .35s ease-in; transform: rotate(var(--r)) scale(.4); opacity: 0; }
+  .slip.fall { animation: fallAway .55s cubic-bezier(.45, 0, .9, .6) both; pointer-events: none; z-index: 20; }
+  @keyframes fallAway {
+    0%   { transform: translateY(0) rotate(var(--r)) scale(1.08); opacity: 1; }
+    70%  { opacity: 1; }
+    100% { transform: translateY(260px) rotate(calc(var(--r) + 55deg)) scale(.9); opacity: 0; }
+  }
+  .slip.leaving { animation: tornOut .5s cubic-bezier(.45, 0, .9, .6) both; pointer-events: none; z-index: 10; }
+  @keyframes tornOut {
+    0%   { transform: translateY(0) rotate(var(--r)); opacity: 1; }
+    30%  { transform: translateY(-26px) rotate(calc(var(--r) - 12deg)); opacity: 1; }
+    100% { transform: translateY(220px) rotate(calc(var(--r) + 40deg)); opacity: 0; }
+  }
   .bowl.pickable .slip.folded:hover { transform: rotate(var(--r)) translateY(-4px) scale(1.06); box-shadow: 0 8px 16px var(--paper-shadow); }
   .people { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 14px 0 0; font-size: 14px; color: var(--muted); }
   .people .tag { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: var(--card); border: 1px solid var(--line); color: var(--ink); }
@@ -180,28 +191,29 @@
     82%  { transform: translateY(-7px) rotate(calc(var(--r) + 2deg)); animation-timing-function: ease-in; }
     100% { transform: translateY(0) rotate(var(--r)); opacity: 1; }
   }
-  .bowl.shuffling { animation: shake 1.6s ease-in-out both; }
+  .bowl.shuffling { animation: shake 1.6s cubic-bezier(.36, .07, .19, .97) both; transform-origin: 50% 90%; }
   @keyframes shake {
     0%   { transform: translate(0, 0) rotate(0); }
-    8%   { transform: translate(-18px, 3px) rotate(-3deg); }
-    16%  { transform: translate(18px, -2px) rotate(3deg); }
-    24%  { transform: translate(-17px, 3px) rotate(-2.8deg); }
-    32%  { transform: translate(16px, -2px) rotate(2.6deg); }
-    40%  { transform: translate(-14px, 2px) rotate(-2.2deg); }
-    48%  { transform: translate(13px, -2px) rotate(2deg); }
-    56%  { transform: translate(-11px, 2px) rotate(-1.6deg); }
-    64%  { transform: translate(9px, -1px) rotate(1.3deg); }
-    72%  { transform: translate(-7px, 1px) rotate(-1deg); }
-    80%  { transform: translate(5px, -1px) rotate(.7deg); }
-    88%  { transform: translate(-3px, 0) rotate(-.4deg); }
+    6%   { transform: translate(-22px, -6px) rotate(-4.5deg); }
+    14%  { transform: translate(22px, -4px) rotate(4.5deg); }
+    22%  { transform: translate(-20px, -6px) rotate(-4deg); }
+    30%  { transform: translate(19px, -3px) rotate(3.6deg); }
+    38%  { transform: translate(-16px, -5px) rotate(-3deg); }
+    46%  { transform: translate(14px, -2px) rotate(2.6deg); }
+    54%  { transform: translate(-12px, -4px) rotate(-2.1deg); }
+    62%  { transform: translate(10px, -2px) rotate(1.7deg); }
+    70%  { transform: translate(-7px, -3px) rotate(-1.3deg); }
+    78%  { transform: translate(5px, -1px) rotate(.9deg); }
+    86%  { transform: translate(-3px, -1px) rotate(-.5deg); }
+    93%  { transform: translate(2px, 0) rotate(.25deg); }
     100% { transform: translate(0, 0) rotate(0); }
   }
   /* slips lag behind the bowl and get thrown about; each has its own throw (--tx/--ty) and phase (--d) */
-  .bowl.shuffling .slip { animation: tumble .32s ease-in-out infinite alternate; animation-delay: var(--d); transition: left .24s ease-in-out, top .24s ease-in-out; }
+  .bowl.shuffling .slip { animation: tumble .26s ease-in-out infinite alternate; animation-delay: var(--d); transition: left .13s cubic-bezier(.25, .6, .35, 1), top .13s cubic-bezier(.2, .5, .3, 1); box-shadow: 0 8px 14px var(--paper-shadow); }
   @keyframes tumble {
-    0%   { transform: translate(calc(var(--tx) * -1), calc(var(--ty) * .6)) rotate(calc(var(--r) - 40deg)); }
-    50%  { transform: translate(calc(var(--tx) * .3), calc(var(--ty) * -1)) rotate(calc(var(--r) + 20deg)); }
-    100% { transform: translate(var(--tx), var(--ty)) rotate(calc(var(--r) + 50deg)); }
+    0%   { transform: translate(calc(var(--tx) * -.6), 6px) rotate(calc(var(--r) - 55deg)) scale(.96); }
+    50%  { transform: translate(calc(var(--tx) * .2), calc(var(--ty) * -1.2)) rotate(calc(var(--r) + 25deg)) scale(1.06); }
+    100% { transform: translate(calc(var(--tx) * .6), 4px) rotate(calc(var(--r) + 65deg)) scale(.98); }
   }
   .bowl.revealed .slip { opacity: .25; }
   .bowl.revealed .slip.winner {
@@ -733,8 +745,14 @@
     d.el.classList.remove('dragging', 'out')
     bowl.classList.remove('dragging')
     if (!insideBowl(e.clientX, e.clientY)) {
-      d.el.classList.add('flyaway')
-      setTimeout(() => { if (state.slips.has(d.id)) remove([d.id]); toast('Slip taken out of the bowl') }, 300)
+      bowl.classList.add('dragging')          // keep the rim open so the fall is visible
+      d.el.classList.add('fall')
+      setTimeout(() => {
+        bowl.classList.remove('dragging')
+        d.el.remove()
+        if (state.slips.has(d.id)) remove([d.id])
+        toast('Slip taken out of the bowl')
+      }, 520)
     } else {
       layout(laidOut)   // snap back to its spot
       renderControls()
@@ -819,7 +837,12 @@
       el.title = drawn || open ? (text != null ? text : away ? `${s.by} isn't here to open it` : `Waiting for ${s.by} to open it`) : 'A folded slip'
       el.querySelector('.t').textContent = drawn || open ? (text != null ? text : away ? `${s.by} is away` : 'opening…') : ''
     }
-    for (const el of bowl.querySelectorAll('.slip')) if (!seen.has(el.dataset.id)) el.remove()
+    for (const el of bowl.querySelectorAll('.slip')) {
+      if (seen.has(el.dataset.id) || el.classList.contains('leaving') || el.classList.contains('fall')) continue
+      if (!bowlReady) { el.remove(); continue }
+      el.classList.add('leaving')             // a slip someone took out tumbles away
+      setTimeout(() => el.remove(), 520)
+    }
     renderPeople()
     layout(mixSeed ? [...slips].sort((a, b) => hash(mixSeed + a.id) - hash(mixSeed + b.id)) : slips)
 
@@ -918,18 +941,27 @@
     bowl.classList.add('shuffling')
     try { navigator.vibrate && navigator.vibrate([70, 50, 70, 50, 60, 60, 50, 80, 40]) } catch {}
     renderControls()
-    // throw the slips to new spots every quarter second while the bowl shakes
+    // The slips slosh against the bowl's motion: each toss throws the pile to the side the bowl is
+    // swinging away from, with big hops early that die down as the shake settles.
     const W = bowl.clientWidth, H = bowl.clientHeight
+    const started = performance.now()
+    let k = 0
     const toss = () => {
-      for (const el of bowl.querySelectorAll('.slip')) {
+      const t = (performance.now() - started) / 1600
+      const amp = Math.max(.15, 1 - t * t)           // energy left in the shake
+      const side = (k++ % 2) ? -1 : 1
+      for (const el of bowl.querySelectorAll('.slip:not(.leaving):not(.fall)')) {
         const w = el.offsetWidth || 80, h = el.offsetHeight || 36
-        const x = W * (.07 + Math.random() * .86) - w / 2, y = H * (.14 + Math.random() * .72) - h / 2
-        el.style.left = Math.round(Math.max(4, Math.min(W - w - 4, x))) + 'px'
-        el.style.top = Math.round(Math.max(4, Math.min(H - h - 4, y))) + 'px'
+        const spread = .16 + Math.random() * .3
+        const cx = W * (.5 + side * spread * amp) + (Math.random() - .5) * W * .3 * (1 - amp)
+        const hop = Math.random() * 90 * amp          // how high this slip gets thrown
+        const cy = H * (.22 + Math.random() * .58) - hop
+        el.style.left = Math.round(Math.max(4, Math.min(W - w - 4, cx - w / 2))) + 'px'
+        el.style.top = Math.round(Math.max(2, Math.min(H - h - 4, cy - h / 2))) + 'px'
       }
     }
     toss()
-    const tossing = setInterval(toss, 240)
+    const tossing = setInterval(toss, 128)
     setTimeout(() => {
       clearInterval(tossing)
       if (state.draw !== d) return
