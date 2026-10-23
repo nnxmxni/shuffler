@@ -68,6 +68,11 @@
   .tip { margin: 14px 0 0; font: 500 18px/1.3 Caveat, cursive; color: var(--muted); text-align: center; }
   .tip.go { color: var(--ink); }
   .bowl.pickable .slip.folded { cursor: pointer; }
+  .slip.folded { touch-action: none; }
+  .bowl.dragging { overflow: visible; }
+  .slip.dragging { transition: none; z-index: 20; cursor: grabbing; transform: rotate(var(--r)) scale(1.08); box-shadow: 0 12px 24px var(--paper-shadow); }
+  .slip.dragging.out { box-shadow: 0 12px 24px var(--paper-shadow), 0 0 0 3px var(--accent); }
+  .slip.flyaway { transition: transform .35s ease-in, opacity .35s ease-in; transform: rotate(var(--r)) scale(.4); opacity: 0; }
   .bowl.pickable .slip.folded:hover { transform: rotate(var(--r)) translateY(-4px) scale(1.06); box-shadow: 0 8px 16px var(--paper-shadow); }
   .people { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 14px 0 0; font-size: 14px; color: var(--muted); }
   .people .tag { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: var(--card); border: 1px solid var(--line); color: var(--ink); }
@@ -322,7 +327,7 @@
   <footer>
     <span>You're in as <b id="me"></b></span>
     <button class="small" id="leave">Leave the bowl</button>
-    <span id="hint">Everyone joins directly, browser to browser. Shake the bowl, then tap a slip to draw it. Leave the bowl to switch rooms.</span>
+    <span id="hint">Everyone joins directly, browser to browser. Shake the bowl, then tap a slip to draw it. Drag a slip out of the bowl to take it out of the shuffle. Leave the bowl to switch rooms.</span>
   </footer>
 </main>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
@@ -673,7 +678,51 @@
     setDraw({ id: uid(), shake: true, by: myName(), t: Date.now() })
   })
 
+  // Drag a folded slip out past the rim to take it out of the shuffle. Letting go inside snaps it back.
+  let drag = null, suppressClick = false
+  const insideBowl = (x, y) => {
+    const r = bowl.getBoundingClientRect()
+    const nx = (x - (r.left + r.width / 2)) / (r.width / 2), ny = (y - (r.top + r.height / 2)) / (r.height / 2)
+    return nx * nx + ny * ny <= 1
+  }
+  $('bowl').addEventListener('pointerdown', e => {
+    const el = e.target.closest('.slip')
+    if (!el || !el.classList.contains('folded') || bowl.classList.contains('shuffling') || e.button) return
+    const s = state.slips.get(el.dataset.id)
+    if (!s) return
+    const r = bowl.getBoundingClientRect()
+    drag = { el, id: s.id, sx: e.clientX, sy: e.clientY, ox: e.clientX - r.left - el.offsetLeft, oy: e.clientY - r.top - el.offsetTop, moved: false }
+    el.setPointerCapture(e.pointerId)
+  })
+  $('bowl').addEventListener('pointermove', e => {
+    if (!drag) return
+    if (!drag.moved && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) < 6) return
+    if (!drag.moved) { drag.moved = true; drag.el.classList.add('dragging'); bowl.classList.add('dragging'); $('tip').textContent = 'Let go outside the bowl to take it out' }
+    const r = bowl.getBoundingClientRect()
+    drag.el.style.left = Math.round(e.clientX - r.left - drag.ox) + 'px'
+    drag.el.style.top = Math.round(e.clientY - r.top - drag.oy) + 'px'
+    drag.el.classList.toggle('out', !insideBowl(e.clientX, e.clientY))
+  })
+  const endDrag = e => {
+    if (!drag) return
+    const d = drag; drag = null
+    if (!d.moved) return
+    suppressClick = true
+    d.el.classList.remove('dragging', 'out')
+    bowl.classList.remove('dragging')
+    if (!insideBowl(e.clientX, e.clientY)) {
+      d.el.classList.add('flyaway')
+      setTimeout(() => { if (state.slips.has(d.id)) remove([d.id]); toast('Slip taken out of the bowl') }, 300)
+    } else {
+      layout(laidOut)   // snap back to its spot
+      renderControls()
+    }
+  }
+  $('bowl').addEventListener('pointerup', endDrag)
+  $('bowl').addEventListener('pointercancel', endDrag)
+
   $('bowl').addEventListener('click', e => {
+    if (suppressClick) { suppressClick = false; return }
     const el = e.target.closest('.slip')
     if (!el || !el.classList.contains('folded')) return
     const s = state.slips.get(el.dataset.id)

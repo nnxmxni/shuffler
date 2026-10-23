@@ -104,6 +104,27 @@ console.log('B sees every slip open after A revealed all:', openB.all && openB.t
 await B.click('#putBack')
 console.log('A folded back after B put them away:', await until(A, async () => await A.$$eval('#bowl .slip', els => els.every(e => e.classList.contains('folded'))), 5000))
 
+// ---- drag a slip out of the bowl to remove it (anyone, any slip) ----
+{
+  const box = await (await B.$('#bowl .slip.folded:not(.mine)')).boundingBox()   // B drags one of A's slips
+  const bowlBox = await (await B.$('#bowl')).boundingBox()
+  const nA = await bowlCount(A), nB = await bowlCount(B)
+  await B.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await B.mouse.down()
+  await B.mouse.move(box.x + 40, box.y + 60, { steps: 5 })
+  await B.mouse.move(bowlBox.x + bowlBox.width / 2, bowlBox.y + bowlBox.height + 140, { steps: 10 })
+  await B.mouse.up()
+  console.log('Dragging a slip past the rim removes it for B:', await until(B, async () => (await bowlCount(B)) === nB - 1, 5000), '|', await B.$eval('#toast', e => e.textContent))
+  console.log('…and for A, whose slip it was:', await until(A, async () => (await bowlCount(A)) === nA - 1, 5000))
+  // letting go inside the bowl snaps it back
+  const box2 = await (await A.$('#bowl .slip.folded')).boundingBox()
+  const n2 = await bowlCount(A)
+  await A.mouse.move(box2.x + box2.width / 2, box2.y + box2.height / 2); await A.mouse.down()
+  await A.mouse.move(box2.x + 30, box2.y + 20, { steps: 5 }); await A.mouse.up()
+  await new Promise(r => setTimeout(r, 700))
+  console.log('Letting go inside the bowl keeps it:', (await bowlCount(A)) === n2 && !(await A.$eval('#result', e => e.classList.contains('show'))))
+}
+
 // ---- leaving: B closes the tab, A's people list drops Ben promptly ----
 const t1 = Date.now()
 await B.browserContext().close()
