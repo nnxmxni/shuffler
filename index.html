@@ -77,6 +77,8 @@
   .people .tag.wait::after { content: '…'; color: var(--accent); }
   .people .tag.wait { color: var(--muted); }
   .people .tag.wait b { color: var(--ink); font-weight: 500; }
+  .people .tag.idle { color: var(--muted); border-style: dashed; }
+  .people .tag.idle b { color: var(--ink); font-weight: 500; }
   .people .lead { margin-right: 2px; }
   .people .tag.new { animation: welcome 1s ease-in-out 3; }
   .people .tag.left { color: var(--muted); border-style: dashed; text-decoration: line-through; animation: fadeout 5s ease-in both; }
@@ -539,11 +541,17 @@
   const resultShowing = () => !!(state.draw && (state.draw.winner || state.draw.revealAll) && !state.draw.cleared)
   function renderPeople() {
     const others = peerIds()
-    const tag = (label, ok, me) => ok
-      ? `<span class="tag ok${me ? ' me' : ''}" title="Done adding">${label} done</span>`
-      : `<span class="tag wait${me ? ' me' : ''}" title="Still writing"><b>${label}</b> still writing</span>`
-    $('people').innerHTML = `<span class="lead">In the bowl:</span>` + tag('you', myReady, true)
-      + others.map(id => tag(esc(names[id] || 'someone'), readyMap[id]).replace('class="tag', justJoined[id] ? 'class="tag new' : 'class="tag')).join('')
+    // what each person is up to: done, adding slips (has some, not done), or no slips yet
+    const slipsBy = {}
+    for (const s of state.slips.values()) slipsBy[s.owner] = (slipsBy[s.owner] || 0) + 1
+    const tag = (label, ok, me, uid) => {
+      const n = slipsBy[uid] || 0
+      if (ok) return `<span class="tag ok${me ? ' me' : ''}" title="Done adding">${label} done</span>`
+      if (n) return `<span class="tag wait${me ? ' me' : ''}" title="${n} slip${n === 1 ? '' : 's'} in, not done yet"><b>${label}</b> adding slips</span>`
+      return `<span class="tag idle${me ? ' me' : ''}" title="Hasn't dropped a slip in yet"><b>${label}</b> no slips yet</span>`
+    }
+    $('people').innerHTML = `<span class="lead">In the bowl:</span>` + tag('you', myReady, true, myId)
+      + others.map(id => tag(esc(names[id] || 'someone'), readyMap[id], false, peerOwner[id]).replace('class="tag', justJoined[id] ? 'class="tag new' : 'class="tag')).join('')
       + Object.entries(justLeft).map(([id, who]) => `<span class="tag left" title="Just left">${esc(who)} left</span>`).join('')
       + (others.length ? '' : `<span class="lead">· waiting for others to join</span>`)
   }
@@ -559,7 +567,7 @@
     $('revealAll').disabled = !everyoneDone
     bowl.classList.toggle('pickable', canPick && !resultShowing())
     const tip = !state.slips.size ? '' : shaking ? 'Shaking the bowl…'
-      : waiting.length ? `Waiting for ${waiting.join(', ')} to finish writing before anyone draws`
+      : waiting.length ? `Waiting for ${waiting.join(', ')} to say they're done before anyone draws`
       : resultShowing() ? '' : shaken ? 'Now reach in and tap a slip to draw it' : 'Shake the bowl first, then tap a slip to draw it'
     $('tip').textContent = tip
     $('tip').classList.toggle('go', !!(canPick && !resultShowing()))
@@ -674,7 +682,7 @@
     if (bowl.classList.contains('shuffling')) return
     if (!canPick) {
       const waiting = peerIds().filter(id => !readyMap[id]).map(id => names[id] || 'someone')
-      toast(waiting.length ? `Waiting for ${waiting.join(', ')} to finish writing.` : !shaken ? 'Shake the bowl first.' : 'Nothing to draw yet.')
+      toast(waiting.length ? `Waiting for ${waiting.join(', ')} to say they're done.` : !shaken ? 'Shake the bowl first.' : 'Nothing to draw yet.')
       return
     }
     if (!openable(s)) { toast(`${s.by} isn't here to open that one. Try another.`); return }
@@ -741,6 +749,7 @@
       el.querySelector('.t').textContent = drawn || open ? (text != null ? text : away ? `${s.by} is away` : 'opening…') : ''
     }
     for (const el of bowl.querySelectorAll('.slip')) if (!seen.has(el.dataset.id)) el.remove()
+    renderPeople()
     layout(mixSeed ? [...slips].sort((a, b) => hash(mixSeed + a.id) - hash(mixSeed + b.id)) : slips)
 
     const d = state.draw
