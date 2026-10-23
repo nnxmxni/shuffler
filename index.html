@@ -79,6 +79,8 @@
   .people .tag.wait b { color: var(--ink); font-weight: 500; }
   .people .lead { margin-right: 2px; }
   .people .tag.new { animation: welcome 1s ease-in-out 3; }
+  .people .tag.left { color: var(--muted); border-style: dashed; text-decoration: line-through; animation: fadeout 5s ease-in both; }
+  @keyframes fadeout { 0%, 60% { opacity: 1; } 100% { opacity: 0; } }
   @keyframes welcome { 0%, 100% { box-shadow: 0 0 0 0 rgba(76, 175, 111, 0); } 50% { box-shadow: 0 0 0 4px rgba(76, 175, 111, .45); border-color: #4caf6f; } }
 
   header { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between; margin-bottom: 16px; }
@@ -364,6 +366,7 @@
   const peerOwner = {}       // peerId -> owner id, learned from the name message
   const lastSeen = {}        // peerId -> last time we heard from them
   const justJoined = {}      // peerId -> join time, for the welcome highlight
+  const justLeft = {}        // peerId -> name, shown greyed out for a few seconds after leaving
   const GONE_AFTER = 12000   // ms of silence before a peer is treated as gone
   const gone = new Set()     // peers that said goodbye or fell silent; hidden until their connection closes
   const seen = id => { lastSeen[id] = Date.now(); gone.delete(id) }
@@ -518,9 +521,14 @@
   function dropPeer(id, announce) {
     const who = names[id]
     if (!(id in names) && !(id in lastSeen)) return
-    delete names[id]; delete readyMap[id]; delete peerOwner[id]; delete lastSeen[id]
+    delete names[id]; delete readyMap[id]; delete peerOwner[id]; delete lastSeen[id]; delete justJoined[id]
     gone.add(id)
-    if (announce && who) toast(`${who} left the bowl`)
+    if (announce && who) {
+      toast(`👋 ${who} left the bowl`, 4500)
+      try { navigator.vibrate && navigator.vibrate([20, 60, 20]) } catch {}
+      justLeft[id] = who
+      setTimeout(() => { delete justLeft[id]; renderControls() }, 5000)
+    }
     updatePeers(); render()
   }
   // anyone silent for too long is dropped from the list (and stops blocking the draw)
@@ -536,6 +544,7 @@
       : `<span class="tag wait${me ? ' me' : ''}" title="Still writing"><b>${label}</b> still writing</span>`
     $('people').innerHTML = `<span class="lead">In the bowl:</span>` + tag('you', myReady, true)
       + others.map(id => tag(esc(names[id] || 'someone'), readyMap[id]).replace('class="tag', justJoined[id] ? 'class="tag new' : 'class="tag')).join('')
+      + Object.entries(justLeft).map(([id, who]) => `<span class="tag left" title="Just left">${esc(who)} left</span>`).join('')
       + (others.length ? '' : `<span class="lead">· waiting for others to join</span>`)
   }
   function renderControls() {

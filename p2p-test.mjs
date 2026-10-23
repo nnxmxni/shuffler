@@ -106,8 +106,9 @@ console.log('A folded back after B put them away:', await until(A, async () => a
 // ---- leaving: B closes the tab, A's people list drops Ben promptly ----
 const t1 = Date.now()
 await B.browserContext().close()
-const gone = await until(A, async () => !/Ben/.test(await A.$eval('#people', e => e.textContent)), 20000)
+const gone = await until(A, async () => await A.$$eval('#people .tag:not(.left)', els => els.every(e => !/Ben/.test(e.textContent))), 20000)
 console.log('A dropped Ben after B closed the tab:', gone, `(${((Date.now() - t1) / 1000).toFixed(1)}s)`, '|', await A.$eval('#people', e => e.textContent), '|', await A.$eval('#toast', e => e.textContent))
+console.log('A got a leave notice and a fading chip:', await A.$eval('#toast', e => e.classList.contains('show') && /Ben left the bowl/.test(e.textContent)), await A.$eval('#people .tag.left', e => /Ben left/.test(e.textContent)).catch(() => false))
 console.log('A no longer waits on Ben:', await until(A, async () => !/Waiting for Ben/.test(await A.$eval('#draw', e => e.textContent)), 5000))
 
 await browser.close()
