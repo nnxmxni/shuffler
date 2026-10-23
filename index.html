@@ -360,6 +360,10 @@
   // sends them and everyone checks them against h. Once opened, the text is part of the shared record.
   let secrets = {}           // id -> {text, salt}, your own slips only
   const peerOwner = {}       // peerId -> owner id, learned from the name message
+  const lastSeen = {}        // peerId -> last time we heard from them
+  const GONE_AFTER = 12000   // ms of silence before a peer is treated as gone
+  const gone = new Set()     // peers that said goodbye or fell silent; hidden until their connection closes
+  const seen = id => { lastSeen[id] = Date.now(); gone.delete(id) }
   const verified = new Set() // slip ids whose revealed text matched its fingerprint
   const sha256 = async str => {
     const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str))
@@ -431,6 +435,8 @@
     for (const k of Object.keys(names)) if (k !== selfId) delete names[k]
     for (const k of Object.keys(readyMap)) delete readyMap[k]
     for (const k of Object.keys(peerOwner)) delete peerOwner[k]
+    for (const k of Object.keys(lastSeen)) delete lastSeen[k]
+    gone.clear()
     verified.clear()
     myReady = false
     mixSeed = ''
@@ -447,21 +453,27 @@
       }
     })
     acts = {}
-    for (const n of ['state', 'add', 'remove', 'draw', 'name', 'ready', 'open']) acts[n] = room.makeAction(n)
-    room.onPeerJoin = id => { send('name', { name: myName(), uid: myId }, id); send('ready', myReady, id); send('state', snapshot(), id); updatePeers(); toast('Someone joined the bowl') }
-    room.onPeerLeave = id => { delete names[id]; delete readyMap[id]; delete peerOwner[id]; updatePeers(); render() }
-    acts.ready.onMessage = (v, { peerId }) => { readyMap[peerId] = !!v; renderControls() }
+    for (const n of ['state', 'add', 'remove', 'draw', 'name', 'ready', 'open', 'ping', 'bye']) acts[n] = room.makeAction(n)
+    room.onPeerJoin = id => { seen(id); send('name', { name: myName(), uid: myId }, id); send('ready', myReady, id); send('state', snapshot(), id); updatePeers() }
+    acts.ping.onMessage = (_, { peerId }) => { seen(peerId); if (!(peerId in names)) updatePeers() }
+    acts.bye.onMessage = (_, { peerId }) => dropPeer(peerId, true)
+    room.onPeerLeave = id => dropPeer(id, true)
+    acts.ready.onMessage = (v, { peerId }) => { seen(peerId); readyMap[peerId] = !!v; renderControls() }
     acts.name.onMessage = (n, { peerId }) => {
+      seen(peerId)
+      const wasNew = !(peerId in names)
       const info = n && typeof n === 'object' ? n : { name: n }
       names[peerId] = String(info.name || '').slice(0, 20)
       if (info.uid) peerOwner[peerId] = String(info.uid)
+      if (wasNew) toast(`${names[peerId] || 'Someone'} joined the bowl`)
       renderControls(); render()
     }
-    acts.open.onMessage = list => acceptOpens(list)
-    acts.state.onMessage = remote => { merge(remote); save(); render(); maybeAnimate() }
-    acts.add.onMessage = (s, { peerId }) => { if (!state.removed.has(s.id)) state.slips.set(s.id, s); readyMap[peerId] = false; shaken = false; save(); render() }
-    acts.remove.onMessage = ids => { for (const id of ids) { state.removed.add(id); state.slips.delete(id) } shaken = false; save(); render() }
-    acts.draw.onMessage = d => {
+    acts.open.onMessage = (list, { peerId }) => { seen(peerId); acceptOpens(list) }
+    acts.state.onMessage = (remote, { peerId }) => { seen(peerId); merge(remote); save(); render(); maybeAnimate() }
+    acts.add.onMessage = (s, { peerId }) => { seen(peerId); if (!state.removed.has(s.id)) state.slips.set(s.id, s); readyMap[peerId] = false; shaken = false; save(); render() }
+    acts.remove.onMessage = (ids, { peerId }) => { seen(peerId); for (const id of ids) { state.removed.add(id); state.slips.delete(id) } shaken = false; save(); render() }
+    acts.draw.onMessage = (d, { peerId }) => {
+      seen(peerId)
       if (state.draw && d.t <= state.draw.t) return
       state.draw = d; save(); offerSecrets(d); render(); maybeAnimate()
       if (d.cleared && d.reason === 'added') toast(d.what === 'reveal' ? `${d.by} added a slip after the reveal, so everything was folded back.` : `${d.by} added a slip after the draw, so the result was cleared. Draw again.`)
@@ -483,7 +495,31 @@
   }
 
   const peerCount = () => { const p = room ? room.getPeers() : {}; return p instanceof Map ? p.size : Object.keys(p).length }
-  const peerIds = () => { if (!room) return []; const p = room.getPeers(); return p instanceof Map ? [...p.keys()] : Object.keys(p) }
+  const peerIds = () => {
+    if (!room) return []
+    const p = room.getPeers()
+    const entries = p instanceof Map ? [...p.entries()] : Object.entries(p)
+    const now = Date.now()
+    return entries.filter(([id, pc]) => {
+      if (gone.has(id)) return false
+      const st = pc && pc.connectionState
+      if (st === 'failed' || st === 'closed' || st === 'disconnected') return false
+      return !lastSeen[id] || now - lastSeen[id] < GONE_AFTER
+    }).map(([id]) => id)
+  }
+  function dropPeer(id, announce) {
+    const who = names[id]
+    if (!(id in names) && !(id in lastSeen)) return
+    delete names[id]; delete readyMap[id]; delete peerOwner[id]; delete lastSeen[id]
+    gone.add(id)
+    if (announce && who) toast(`${who} left the bowl`)
+    updatePeers(); render()
+  }
+  // anyone silent for too long is dropped from the list (and stops blocking the draw)
+  function sweepPeers() {
+    const now = Date.now()
+    for (const id of Object.keys(lastSeen)) if (now - lastSeen[id] >= GONE_AFTER) dropPeer(id, true)
+  }
   const resultShowing = () => !!(state.draw && (state.draw.winner || state.draw.revealAll) && !state.draw.cleared)
   function renderPeople() {
     const others = peerIds()
@@ -527,7 +563,11 @@
     $('signal').textContent = n ? 'connected' : open ? 'waiting for others' : total ? 'offline' : 'connecting…'
     $('signal').title = open ? `${open} relay${open === 1 ? '' : 's'} reachable. Peers find each other through public Nostr relays, then talk directly.` : 'The page could not reach any relay, so peers cannot find each other. Check your connection.'
   }
-  setInterval(updatePeers, 2000)
+  setInterval(() => { sweepPeers(); updatePeers() }, 2000)
+  setInterval(() => { if (room && lobby.hidden) send('ping', 1) }, 3000)
+  // tell the room you're leaving, so the list updates at once instead of after a timeout
+  const sayBye = () => { if (room) { try { send('bye', 1) } catch {} } }
+  window.addEventListener('pagehide', () => { sayBye(); try { room && room.leave() } catch {} })
 
   // ---------- invite ----------
   const inviteLink = () => location.origin + location.pathname + '#' + roomCode
@@ -844,6 +884,7 @@
   $('lobbyForm').addEventListener('submit', e => { e.preventDefault(); enter(cleanCode($('lobbyCode').value) || randomCode()) })
   $('newBowl').addEventListener('click', () => { const c = randomCode(); enter(c); if (!lobby.hidden) return; toast('New bowl opened. Room code ' + c) })
   $('leave').addEventListener('click', () => {
+    sayBye()
     if (room) { try { room.leave() } catch {} }
     room = null; acts = null
     showLobby()

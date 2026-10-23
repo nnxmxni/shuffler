@@ -101,4 +101,11 @@ console.log('B sees every slip open after A revealed all:', openB.all && openB.t
 await B.click('#putBack')
 console.log('A folded back after B put them away:', await until(A, async () => await A.$$eval('#bowl .slip', els => els.every(e => e.classList.contains('folded'))), 5000))
 
+// ---- leaving: B closes the tab, A's people list drops Ben promptly ----
+const t1 = Date.now()
+await B.browserContext().close()
+const gone = await until(A, async () => !/Ben/.test(await A.$eval('#people', e => e.textContent)), 20000)
+console.log('A dropped Ben after B closed the tab:', gone, `(${((Date.now() - t1) / 1000).toFixed(1)}s)`, '|', await A.$eval('#people', e => e.textContent), '|', await A.$eval('#toast', e => e.textContent))
+console.log('A no longer waits on Ben:', await until(A, async () => !/Waiting for Ben/.test(await A.$eval('#draw', e => e.textContent)), 5000))
+
 await browser.close()
